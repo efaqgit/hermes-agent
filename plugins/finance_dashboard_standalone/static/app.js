@@ -1171,6 +1171,50 @@ function App() {
                   {/* Render Visualizations if activeStats exists */}
                   {activeStats && (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6 border-b border-white/[0.04] pb-6">
+                      {/* PEG Valuation Rating Card */}
+                      {activeStats.peg_ratio !== undefined && activeStats.peg_ratio !== null && (
+                        <div className="col-span-1 md:col-span-2 bg-[#0b0b14]/40 border border-white/[0.05] rounded-xl p-4 flex items-center justify-between shadow-md backdrop-blur-md">
+                          <div className="flex flex-col gap-0.5">
+                            <span className="text-[10px] text-slate-400 font-mono uppercase tracking-wider font-bold">
+                              市盈成長比 (PEG Ratio) 智能評級
+                            </span>
+                            <span className="text-xs text-white font-mono font-medium mt-1">
+                              PEG 值：<span className="font-bold text-base text-cyan-400">{Number(activeStats.peg_ratio).toFixed(2)}</span>
+                            </span>
+                          </div>
+                          
+                          {/* Badge based on value */}
+                          {(() => {
+                            const peg = Number(activeStats.peg_ratio);
+                            if (peg <= 0) {
+                              return (
+                                <span className="px-3 py-1.5 bg-rose-500/10 text-rose-400 border border-rose-500/20 rounded-full text-[10px] font-bold font-mono uppercase animate-pulse">
+                                  ⚠️ Negative Growth (低防禦)
+                                </span>
+                              );
+                            } else if (peg < 1.0) {
+                              return (
+                                <span className="px-3 py-1.5 bg-emerald-500/15 text-emerald-400 border border-emerald-500/25 rounded-full text-[10px] font-bold font-mono uppercase tracking-wide shadow-[0_0_12px_rgba(16,185,129,0.15)] animate-pulse">
+                                  💎 Undervalued (極佳安全邊際)
+                                </span>
+                              );
+                            } else if (peg <= 1.5) {
+                              return (
+                                <span className="px-3 py-1.5 bg-amber-500/15 text-amber-400 border border-amber-500/25 rounded-full text-[10px] font-bold font-mono uppercase tracking-wide">
+                                  ⚖️ Fair Value (估值合理)
+                                </span>
+                              );
+                            } else {
+                              return (
+                                <span className="px-3 py-1.5 bg-rose-500/15 text-rose-400 border border-rose-500/25 rounded-full text-[10px] font-bold font-mono uppercase tracking-wide">
+                                  🚨 Overpriced (成長溢價過高)
+                                </span>
+                              );
+                            }
+                          })()}
+                        </div>
+                      )}
+
                       {/* Radar Chart Panel */}
                       <div className="bg-[#0b0b14]/35 border border-white/[0.04] rounded-xl p-4 flex flex-col items-center">
                         <span className="text-[10px] text-emerald-400 font-mono uppercase tracking-wider mb-3 w-full text-left font-bold">
