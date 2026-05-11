@@ -970,10 +970,27 @@ function App() {
                 <label className="text-[9px] text-slate-400 uppercase">Strategy</label>
                 <select
                   value={selectedStrategy}
-                  onChange={(e) => setSelectedStrategy(e.target.value)}
+                  onChange={(e) => {
+                    const strat = e.target.value;
+                    setSelectedStrategy(strat);
+                    if (strat === "MA_Breakthrough") {
+                      setParamFast(81);
+                      setParamSlow(0);
+                    } else if (strat === "SMA_Crossover") {
+                      setParamFast(20);
+                      setParamSlow(50);
+                    } else if (strat === "RSI_Strategy") {
+                      setParamFast(30);
+                      setParamSlow(70);
+                    } else if (strat === "Bollinger_Strategy") {
+                      setParamFast(20);
+                      setParamSlow(2.0);
+                    }
+                  }}
                   className="bg-black/40 border border-white/[0.08] rounded-lg px-2.5 py-2 text-slate-300 focus:outline-none focus:border-cyan-500 cursor-pointer"
                 >
                   <option value="SMA_Crossover">均線黃金交叉</option>
+                  <option value="MA_Breakthrough">均線突破策略</option>
                   <option value="RSI_Strategy">RSI 超買超賣</option>
                   <option value="Bollinger_Strategy">布林通道反彈</option>
                 </select>
@@ -981,7 +998,7 @@ function App() {
 
               <div className="flex flex-col gap-1.5">
                 <label className="text-[9px] text-slate-400 uppercase">
-                  {selectedStrategy === "SMA_Crossover" ? "Fast SMA" : selectedStrategy === "RSI_Strategy" ? "RSI Low" : "BB Period"}
+                  {selectedStrategy === "SMA_Crossover" ? "Fast SMA" : selectedStrategy === "RSI_Strategy" ? "RSI Low" : selectedStrategy === "MA_Breakthrough" ? "MA Window (天數)" : "BB Period"}
                 </label>
                 <input
                   type="number"
@@ -993,13 +1010,14 @@ function App() {
 
               <div className="flex flex-col gap-1.5">
                 <label className="text-[9px] text-slate-400 uppercase">
-                  {selectedStrategy === "SMA_Crossover" ? "Slow SMA" : selectedStrategy === "RSI_Strategy" ? "RSI High" : "BB Dev"}
+                  {selectedStrategy === "SMA_Crossover" ? "Slow SMA" : selectedStrategy === "RSI_Strategy" ? "RSI High" : selectedStrategy === "MA_Breakthrough" ? "未啟用" : "BB Dev"}
                 </label>
                 <input
                   type="number"
                   value={paramSlow}
+                  disabled={selectedStrategy === "MA_Breakthrough"}
                   onChange={(e) => setParamSlow(e.target.value)}
-                  className="bg-black/40 border border-white/[0.08] rounded-lg px-2.5 py-1.5 text-slate-300 focus:outline-none focus:border-cyan-500"
+                  className="bg-black/40 border border-white/[0.08] rounded-lg px-2.5 py-1.5 text-slate-300 focus:outline-none focus:border-cyan-500 disabled:opacity-30 disabled:cursor-not-allowed"
                 />
               </div>
 

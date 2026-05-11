@@ -1386,6 +1386,28 @@ def _run_backtest(df, strategy_name, param_fast, param_slow, initial_capital=100
                 signals.append(-1)
             else:
                 signals.append(0)
+    elif strategy_name == "MA_Breakthrough":
+        window = int(param_fast or 81)
+        if len(df) >= window:
+            ma = df["Close"].rolling(window=window).mean().values
+        else:
+            ma = np.array([close[0]] * len(df))
+            
+        for i in range(len(df)):
+            if i < window:
+                signals.append(0)
+                continue
+            prev_close = close[i-1]
+            prev_ma = ma[i-1]
+            curr_close = close[i]
+            curr_ma = ma[i]
+            
+            if prev_close <= prev_ma and curr_close > curr_ma:
+                signals.append(1)  # Buy breakthrough
+            elif prev_close >= prev_ma and curr_close < curr_ma:
+                signals.append(-1) # Sell breakthrough
+            else:
+                signals.append(0)
     else:
         signals = [0] * len(df)
 
