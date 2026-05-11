@@ -517,8 +517,9 @@ def _run_monte_carlo(ticker: str) -> dict:
     
     if peg_ratio is None:
         pe_val = pe_trailing or pe_forward
-        if pe_val and growth_stage1_mean and growth_stage1_mean > 0:
-            peg_ratio = float(pe_val) / (float(growth_stage1_mean) * 100.0)
+        # Use uncapped real-world growth_est for realistic PEG multiples
+        if pe_val and growth_est and growth_est > 0.005:
+            peg_ratio = float(pe_val) / (float(growth_est) * 100.0)
 
     return {
         "ticker": ticker,
@@ -597,16 +598,16 @@ def _generate_markdown_report(stats: dict) -> str:
     val_upside = stats["fcf_model"]["upside_pct"]
     value_val = min(100.0, max(15.0, val_upside + 50.0))
     
-    growth_rate = stats.get("est_growth_g1") or 0.10
+    growth_rate = stats.get("est_growth_g1") if stats.get("est_growth_g1") is not None else 0.10
     growth_val = min(100.0, max(15.0, growth_rate * 400.0))
     
-    de_ratio = stats.get("debt_equity") or 50.0
+    de_ratio = stats.get("debt_equity") if stats.get("debt_equity") is not None else 50.0
     safety_val = min(100.0, max(15.0, 100.0 - (de_ratio / 3.0)))
     
-    roe_ratio = stats.get("roe") or 0.15
+    roe_ratio = stats.get("roe") if stats.get("roe") is not None else 0.15
     efficiency_val = min(100.0, max(15.0, roe_ratio * 300.0))
     
-    beta_ratio = stats.get("beta") or 1.0
+    beta_ratio = stats.get("beta") if stats.get("beta") is not None else 1.0
     momentum_val = min(100.0, max(15.0, 100.0 - abs(1.0 - beta_ratio) * 40.0))
     
     cx, cy, r_limit = 110.0, 110.0, 70.0
