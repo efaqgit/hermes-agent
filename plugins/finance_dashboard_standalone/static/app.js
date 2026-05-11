@@ -1214,22 +1214,6 @@ function App() {
                           })()}
                         </div>
                       )}
-
-                      {/* Radar Chart Panel */}
-                      <div className="bg-[#0b0b14]/35 border border-white/[0.04] rounded-xl p-4 flex flex-col items-center">
-                        <span className="text-[10px] text-emerald-400 font-mono uppercase tracking-wider mb-3 w-full text-left font-bold">
-                          🎯 Fundamental Radar
-                        </span>
-                        {renderRadarSVG(activeStats)}
-                      </div>
-
-                      {/* Distribution Histogram Panel */}
-                      <div className="bg-[#0b0b14]/35 border border-white/[0.04] rounded-xl p-4 flex flex-col items-center">
-                        <span className="text-[10px] text-emerald-400 font-mono uppercase tracking-wider mb-3 w-full text-left font-bold">
-                          📈 Monte Carlo FCF Probabilities
-                        </span>
-                        {renderDistributionSVG(activeStats)}
-                      </div>
                     </div>
                   )}
 

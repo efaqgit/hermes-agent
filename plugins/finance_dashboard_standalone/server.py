@@ -511,6 +511,15 @@ def _run_monte_carlo(ticker: str) -> dict:
     # Batch-translate news titles to Taiwan Chinese
     news_data = _translate_news_titles(news_data)
 
+    pe_trailing = info.get("trailingPE")
+    pe_forward = info.get("forwardPE")
+    peg_ratio = info.get("pegRatio")
+    
+    if peg_ratio is None:
+        pe_val = pe_trailing or pe_forward
+        if pe_val and growth_stage1_mean and growth_stage1_mean > 0:
+            peg_ratio = float(pe_val) / (float(growth_stage1_mean) * 100.0)
+
     return {
         "ticker": ticker,
         "current_price": current_price,
@@ -520,10 +529,10 @@ def _run_monte_carlo(ticker: str) -> dict:
         "net_debt": net_debt,
         "fcf_base": fcf_base,
         "earnings_base": earnings_base,
-        "pe_trailing": info.get("trailingPE"),
-        "pe_forward": info.get("forwardPE"),
+        "pe_trailing": pe_trailing,
+        "pe_forward": pe_forward,
         "pb_ratio": info.get("priceToBook"),
-        "peg_ratio": info.get("pegRatio"),
+        "peg_ratio": peg_ratio,
         "profit_margin": info.get("profitMargins"),
         "roe": info.get("returnOnEquity"),
         "current_ratio": info.get("currentRatio"),
