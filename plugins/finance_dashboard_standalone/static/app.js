@@ -16,6 +16,8 @@ function App() {
   // Chart State
   const [activeChartTicker, setActiveChartTicker] = useState("AMAT");
   const [selectedIndicators, setSelectedIndicators] = useState("ma,bb,vol,macd,rsi");
+  const [selectedPeriod, setSelectedPeriod] = useState("1y");
+  const [selectedInterval, setSelectedInterval] = useState("1d");
 
   // Stochastic Valuation State
   const [historicalReports, setHistoricalReports] = useState([]);
@@ -455,42 +457,86 @@ function App() {
         {/* ─── COLUMN 2: TECHNICAL CHARTS & TRANSACTION BOOK (CENTER) ─── */}
         <div className="xl:col-span-5 flex flex-col gap-6">
           {/* Live Chart Header Controls */}
-          <div className="bg-[#0b0b14]/30 border border-white/[0.05] rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4 backdrop-blur-md">
-            <div className="flex items-center gap-3">
-              <span className="p-1.5 bg-emerald-500/15 text-emerald-400 rounded-lg text-[10px] font-bold font-mono">ACTIVE TICKET</span>
-              <span className="text-base font-black font-mono text-white tracking-wider">{activeChartTicker}</span>
-            </div>
-
-            <div className="flex items-center gap-1.5 flex-wrap">
-              {["ma", "bb", "vol", "macd", "rsi"].map(ind => {
-                const isSelected = selectedIndicators.split(",").includes(ind);
-                return (
+          <div className="bg-[#0b0b14]/30 border border-white/[0.05] rounded-2xl p-4 flex flex-col gap-3.5 backdrop-blur-md shadow-lg">
+            {/* Top row: Active Ticker & Period Buttons */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-white/[0.03] pb-3">
+              <div className="flex items-center gap-3">
+                <span className="p-1.5 bg-emerald-500/15 text-emerald-400 rounded-lg text-[10px] font-bold font-mono">ACTIVE TICKET</span>
+                <span className="text-base font-black font-mono text-white tracking-wider">{activeChartTicker}</span>
+              </div>
+              
+              {/* Period Selectors */}
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[9px] font-mono text-slate-500 uppercase mr-1 tracking-wider">PERIOD:</span>
+                {["1mo", "3mo", "6mo", "1y", "2y", "5y", "10y", "max"].map(p => (
                   <button
-                    key={ind}
-                    onClick={() => {
-                      let list = selectedIndicators.split(",").filter(x => x);
-                      if (list.includes(ind)) {
-                        list = list.filter(x => x !== ind);
-                      } else {
-                        list.push(ind);
-                      }
-                      setSelectedIndicators(list.join(","));
-                    }}
-                    className={`px-2.5 py-1 text-[9px] font-bold font-mono border rounded-lg cursor-pointer transition-all uppercase ${
-                      isSelected ? "bg-emerald-500 border-transparent text-black font-black shadow-md shadow-emerald-500/10" : "bg-transparent border-white/[0.08] text-slate-400 hover:text-white"
+                    key={p}
+                    onClick={() => setSelectedPeriod(p)}
+                    className={`px-2 py-0.5 text-[9px] font-bold font-mono border rounded-lg cursor-pointer transition-all uppercase ${
+                      selectedPeriod === p ? "bg-emerald-500 border-transparent text-black font-black" : "bg-transparent border-white/[0.05] text-slate-400 hover:text-white"
                     }`}
                   >
-                    {ind}
+                    {p}
                   </button>
-                );
-              })}
+                ))}
+              </div>
+            </div>
+
+            {/* Bottom row: Interval & Indicator Selectors */}
+            <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
+              {/* Interval Selectors */}
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[9px] font-mono text-slate-500 uppercase mr-1 tracking-wider">INTERVAL:</span>
+                {["1d", "1wk", "1mo"].map(i => {
+                  const displayMap = { "1d": "Daily", "1wk": "Weekly", "1mo": "Monthly" };
+                  return (
+                    <button
+                      key={i}
+                      onClick={() => setSelectedInterval(i)}
+                      className={`px-2.5 py-0.5 text-[9px] font-bold font-mono border rounded-lg cursor-pointer transition-all uppercase ${
+                        selectedInterval === i ? "bg-emerald-500 border-transparent text-black font-black" : "bg-transparent border-white/[0.05] text-slate-400 hover:text-white"
+                      }`}
+                    >
+                      {displayMap[i]}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Indicator Selectors */}
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[9px] font-mono text-slate-500 uppercase mr-1 tracking-wider">INDICATORS:</span>
+                {["ma", "bb", "vol", "macd", "rsi"].map(ind => {
+                  const isSelected = selectedIndicators.split(",").includes(ind);
+                  return (
+                    <button
+                      key={ind}
+                      onClick={() => {
+                        let list = selectedIndicators.split(",").filter(x => x);
+                        if (list.includes(ind)) {
+                          list = list.filter(x => x !== ind);
+                        } else {
+                          list.push(ind);
+                        }
+                        setSelectedIndicators(list.join(","));
+                      }}
+                      className={`px-2 py-0.5 text-[9px] font-bold font-mono border rounded-lg cursor-pointer transition-all uppercase ${
+                        isSelected ? "bg-emerald-500 border-transparent text-black font-black" : "bg-transparent border-white/[0.08] text-slate-400 hover:text-white"
+                      }`}
+                    >
+                      {ind}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
 
           {/* Lightweight Candlestick Chart frame */}
           <div className="border border-white/[0.05] bg-[#07070a] rounded-2xl overflow-hidden shadow-2xl">
             <iframe 
-              src={`/api/chart?ticker=${activeChartTicker}&period=1y&interval=1d&indicators=${selectedIndicators}`}
+              key={`${activeChartTicker}_${selectedPeriod}_${selectedInterval}_${selectedIndicators}`}
+              src={`/api/chart?ticker=${activeChartTicker}&period=${selectedPeriod}&interval=${selectedInterval}&indicators=${selectedIndicators}`}
               className="w-full h-[480px] border-0"
               title="Interactive Candlestick Board"
             />

@@ -813,10 +813,20 @@ async def get_chart_html(
     port = 11111
 
     # 1. Fetch data
-    if _is_futu_opend_running(host, port):
+    # For long-term historical data, prefer Yahoo Finance directly as Futu OpenD has strict history length/quota limits for standard accounts
+    if _is_futu_opend_running(host, port) and period not in ["5y", "10y", "max"]:
         try:
             from moomoo import OpenQuoteContext, KLType
-            period_days_map = {"3mo": 90, "6mo": 180, "1y": 365, "2y": 730, "5y": 1825}
+            period_days_map = {
+                "1mo": 30,
+                "3mo": 90,
+                "6mo": 180,
+                "1y": 365,
+                "2y": 730,
+                "5y": 1825,
+                "10y": 3650,
+                "max": 7300
+            }
             days = period_days_map.get(period, 365)
             start_date = (pd.Timestamp.now() - pd.DateOffset(days=days)).strftime("%Y-%m-%d")
             moo_code = _get_moomoo_code(ticker)
