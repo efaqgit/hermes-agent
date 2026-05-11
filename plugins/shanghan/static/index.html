@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>傷寒雜病論 - 數位辨證終端</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@400;700&family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-container">
+        <header class="app-header">
+            <h1><span class="logo-icon">🌿</span> 傷寒雜病論 <span>數位辨證終端</span></h1>
+            <p class="subtitle">Quantitative TCM Diagnostic Engine based on Shanghan Lun</p>
+        </header>
+        
+        <main class="main-content">
+            <!-- Left Column: Input -->
+            <section class="panel input-panel">
+                <h2>症狀採集 <span class="badge" id="selected-count">0</span></h2>
+                <div class="search-box">
+                    <input type="text" id="symptom-search" placeholder="搜尋症狀... (例如: 發熱, 汗出)">
+                </div>
+                
+                <div class="symptoms-container" id="symptoms-container">
+                    <!-- Dynamic pills will be injected here -->
+                    <div class="loading">載入症狀資料庫中...</div>
+                </div>
+                
+                <button id="btn-analyze" class="btn-primary" disabled>
+                    <span class="btn-text">執行 AI 辨證</span>
+                    <span class="btn-loader"></span>
+                </button>
+            </section>
+            
+            <!-- Right Column: Output -->
+            <section class="panel output-panel">
+                <div class="results-header">
+                    <h2>辨證決策矩陣</h2>
+                    <div class="status-indicator" id="engine-status">等待輸入</div>
+                </div>
+                
+                <div class="results-content">
+                    <div id="formula-results" class="formula-results">
+                        <div class="empty-state">
+                            請在左側選擇患者目前的症狀，並點擊「執行 AI 辨證」。
+                        </div>
+                    </div>
+                    
+                    <div class="ai-doctor-panel">
+                        <h3>AI 老中醫深度解析</h3>
+                        <div id="ai-analysis-content" class="markdown-body">
+                            <!-- LLM Typewriter effect goes here -->
+                            <div class="empty-state">等待辨證結果...</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
