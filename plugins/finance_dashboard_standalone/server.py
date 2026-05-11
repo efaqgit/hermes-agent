@@ -649,13 +649,16 @@ def _generate_markdown_report(stats: dict) -> str:
         
     labels_markup = ""
     for i, angle in enumerate(angles):
-        outer = get_radar_point(angle, 122.0)
+        radius = (values[i] / 100.0) * r_limit
+        # Shift label 14px outward from the actual dot
+        label_pct = ((radius + 14.0) / r_limit) * 100.0
+        outer = get_radar_point(angle, label_pct)
         text_anchor = "middle"
         if outer["x"] > cx + 10.0:
             text_anchor = "start"
         elif outer["x"] < cx - 10.0:
             text_anchor = "end"
-        labels_markup += f'  <text x="{outer["x"]:.1f}" y="{outer["y"]+4:.1f}" fill="rgba(255,255,255,0.7)" font-size="10" font-family="monospace" font-weight="bold" text-anchor="{text_anchor}">{labels[i]}</text>\n'
+        labels_markup += f'  <text x="{outer["x"]:.1f}" y="{outer["y"]+4:.1f}" fill="rgba(255,255,255,0.85)" font-size="9" font-family="monospace" font-weight="bold" text-anchor="{text_anchor}">{labels[i]}({int(values[i])})</text>\n'
         
     radar_svg = f"""<svg width="220" height="220" viewBox="0 0 220 220" style="background:#070712; border:1px solid rgba(255,255,255,0.08); border-radius:12px;">
   <defs>
@@ -746,6 +749,8 @@ def _generate_markdown_report(stats: dict) -> str:
     </div>
   </div>
 </div>"""
+    # Strip all newlines from inline HTML to prevent Markdown parser from stripping SVG text tags
+    visualizations_html = visualizations_html.replace("\n", " ")
 
     report_date = datetime.now().strftime("%Y-%m-%d")
 
