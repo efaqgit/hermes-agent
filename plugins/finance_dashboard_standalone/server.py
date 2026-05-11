@@ -419,6 +419,26 @@ def _run_monte_carlo(ticker: str) -> dict:
     
     fcf_mean = float(np.mean(fcf_results))
     earnings_mean = float(np.mean(earnings_results))
+
+    fcf_hist, fcf_bin_edges = np.histogram(fcf_results, bins=25)
+    earnings_hist, earnings_bin_edges = np.histogram(earnings_results, bins=25)
+
+    fcf_distribution = [
+        {
+            "bin_start": round(float(fcf_bin_edges[i]), 2),
+            "bin_end": round(float(fcf_bin_edges[i+1]), 2),
+            "count": int(fcf_hist[i])
+        }
+        for i in range(len(fcf_hist))
+    ]
+    earnings_distribution = [
+        {
+            "bin_start": round(float(earnings_bin_edges[i]), 2),
+            "bin_end": round(float(earnings_bin_edges[i+1]), 2),
+            "count": int(earnings_hist[i])
+        }
+        for i in range(len(earnings_hist))
+    ]
     
     # Fetch Insider Trades
     insider_data = []
@@ -523,7 +543,8 @@ def _run_monte_carlo(ticker: str) -> dict:
             "p25": round(float(np.percentile(fcf_results, 25)), 2),
             "p75": round(float(np.percentile(fcf_results, 75)), 2),
             "p90": round(float(np.percentile(fcf_results, 90)), 2),
-            "upside_pct": round(((fcf_mean / current_price) - 1) * 100, 2)
+            "upside_pct": round(((fcf_mean / current_price) - 1) * 100, 2),
+            "distribution": fcf_distribution
         },
         "earnings_model": {
             "mean": round(earnings_mean, 2),
@@ -532,7 +553,8 @@ def _run_monte_carlo(ticker: str) -> dict:
             "p25": round(float(np.percentile(earnings_results, 25)), 2),
             "p75": round(float(np.percentile(earnings_results, 75)), 2),
             "p90": round(float(np.percentile(earnings_results, 90)), 2),
-            "upside_pct": round(((earnings_mean / current_price) - 1) * 100, 2)
+            "upside_pct": round(((earnings_mean / current_price) - 1) * 100, 2),
+            "distribution": earnings_distribution
         }
     }
 
@@ -780,7 +802,8 @@ async def generate_report(req: GenerateReportRequest):
             "success": True,
             "filename": filename,
             "path": path,
-            "markdown": md_content
+            "markdown": md_content,
+            "stats": stats
         }
     except Exception as e:
         logger.exception(f"Failed to generate Monte Carlo report for {ticker}")
@@ -1110,6 +1133,257 @@ window.addEventListener('resize', () => {{
 </body>
 </html>"""
     return html
+
+# ─── BACKTESTING & AI COPILOT APIS ───
+
+class BacktestRequest(BaseModel):
+    ticker: str
+    strategy: str
+    param_fast: float
+    param_slow: float
+    period: str = "1y"
+
+def _run_backtest(df, strategy_name, param_fast, param_slow, initial_capital=100000.0):
+    import numpy as np
+    import pandas as pd
+    
+    close = df["Close"].values
+    signals = []
+    
+    if strategy_name == "SMA_Crossover":
+        fast_window = int(param_fast or 20)
+        slow_window = int(param_slow or 50)
+        if len(df) >= slow_window:
+            ma_fast = df["Close"].rolling(window=fast_window).mean().values
+            ma_slow = df["Close"].rolling(window=slow_window).mean().values
+        else:
+            ma_fast = np.array([close[0]] * len(df))
+            ma_slow = np.array([close[0]] * len(df))
+            
+        for i in range(len(df)):
+            if i < slow_window:
+                signals.append(0)
+                continue
+            prev_fast, prev_slow = ma_fast[i-1], ma_slow[i-1]
+            curr_fast, curr_slow = ma_fast[i], ma_slow[i]
+            
+            if prev_fast <= prev_slow and curr_fast > curr_slow:
+                signals.append(1)  # Buy
+            elif prev_fast >= prev_slow and curr_fast < curr_slow:
+                signals.append(-1)  # Sell
+            else:
+                signals.append(0)
+                
+    elif strategy_name == "RSI_Strategy":
+        delta = df["Close"].diff()
+        gain = (delta.where(delta > 0, 0)).ewm(alpha=1/14, adjust=False).mean()
+        loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/14, adjust=False).mean()
+        # Prevent divide by zero
+        loss_replaced = loss.replace(0, 0.00001)
+        rs = gain / loss_replaced
+        rsi = (100 - (100 / (1 + rs))).values
+        
+        low_thresh = float(param_fast or 30)
+        high_thresh = float(param_slow or 70)
+        
+        for i in range(len(df)):
+            if i < 14 or np.isnan(rsi[i]):
+                signals.append(0)
+                continue
+            if rsi[i] < low_thresh:
+                signals.append(1)
+            elif rsi[i] > high_thresh:
+                signals.append(-1)
+            else:
+                signals.append(0)
+                
+    elif strategy_name == "Bollinger_Strategy":
+        mid = df["Close"].rolling(window=20).mean()
+        std = df["Close"].rolling(window=20).std()
+        upper_band = (mid + 2 * std).values
+        lower_band = (mid - 2 * std).values
+        
+        for i in range(len(df)):
+            if i < 20 or np.isnan(lower_band[i]):
+                signals.append(0)
+                continue
+            if df["Close"].iloc[i] < lower_band[i]:
+                signals.append(1)
+            elif df["Close"].iloc[i] > upper_band[i]:
+                signals.append(-1)
+            else:
+                signals.append(0)
+    else:
+        signals = [0] * len(df)
+
+    cash = initial_capital
+    position = 0.0
+    equity_curve = []
+    trades = []
+    current_trade = None
+    
+    for i in range(len(df)):
+        date_str = df.index[i].strftime("%Y-%m-%d")
+        curr_price = float(df["Close"].iloc[i])
+        sig = signals[i]
+        
+        if sig == 1 and position == 0:
+            position = cash / curr_price
+            cash = 0.0
+            current_trade = {
+                "buy_date": date_str,
+                "buy_price": curr_price,
+                "shares": position
+            }
+        elif sig == -1 and position > 0:
+            cash = position * curr_price
+            position = 0.0
+            if current_trade:
+                current_trade["sell_date"] = date_str
+                current_trade["sell_price"] = curr_price
+                current_trade["gain_pct"] = round(((curr_price / current_trade["buy_price"]) - 1) * 100, 2)
+                trades.append(current_trade)
+                current_trade = None
+                
+        port_val = cash + (position * curr_price)
+        equity_curve.append({
+            "date": date_str,
+            "value": round(port_val, 2)
+        })
+        
+    if position > 0 and current_trade:
+        final_price = float(df["Close"].iloc[-1])
+        cash = position * final_price
+        current_trade["sell_date"] = df.index[-1].strftime("%Y-%m-%d")
+        current_trade["sell_price"] = final_price
+        current_trade["gain_pct"] = round(((final_price / current_trade["buy_price"]) - 1) * 100, 2)
+        trades.append(current_trade)
+        position = 0.0
+        
+    total_return = ((cash / initial_capital) - 1) * 100
+    vals = np.array([e["value"] for e in equity_curve])
+    max_vals = np.maximum.accumulate(vals) if len(vals) > 0 else np.array([initial_capital])
+    drawdowns = (vals - max_vals) / max_vals * 100 if len(vals) > 0 else np.array([0.0])
+    max_dd = float(np.min(drawdowns)) if len(drawdowns) > 0 else 0.0
+    
+    for idx, item in enumerate(equity_curve):
+        item["drawdown"] = round(float(drawdowns[idx]), 2)
+        
+    win_trades = [t for t in trades if t["gain_pct"] > 0]
+    win_rate = (len(win_trades) / len(trades) * 100) if len(trades) > 0 else 0.0
+    
+    daily_returns = np.diff(vals) / vals[:-1] if len(vals) > 1 else np.array([0.0])
+    std_dev = np.std(daily_returns)
+    mean_ret = np.mean(daily_returns)
+    sharpe = float((mean_ret / std_dev) * np.sqrt(252)) if std_dev > 0 else 0.0
+    
+    days = (df.index[-1] - df.index[0]).days if len(df) > 1 else 0
+    annualized_return = 0.0
+    if days > 0:
+        annualized_return = ((cash / initial_capital) ** (365.0 / days) - 1) * 100
+        
+    return {
+        "success": True,
+        "strategy": strategy_name,
+        "total_return": round(total_return, 2),
+        "annualized_return": round(annualized_return, 2),
+        "max_drawdown": round(max_dd, 2),
+        "win_rate": round(win_rate, 2),
+        "sharpe_ratio": round(sharpe, 2),
+        "trades_count": len(trades),
+        "trades": trades[-30:],  # last 30 trades
+        "equity_curve": equity_curve
+    }
+
+@app.post("/api/backtest")
+async def run_backtest_api(req: BacktestRequest):
+    """Run a vectorized backtest on daily historical quotes."""
+    ticker = req.ticker.upper().strip()
+    if not ticker:
+        raise HTTPException(status_code=400, detail="Invalid ticker provided")
+    try:
+        import yfinance as yf
+        import pandas as pd
+        
+        clean_ticker = ticker.replace("US.", "").replace("HK.", "") if "." in ticker else ticker
+        raw = yf.download(clean_ticker, period=req.period, interval="1d", progress=False)
+        if raw is None or raw.empty:
+            raise HTTPException(status_code=404, detail=f"No quotes available for backtesting {ticker}")
+            
+        df = raw[["Open", "High", "Low", "Close", "Volume"]].copy()
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+            
+        for col in ["Open", "High", "Low", "Close", "Volume"]:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+        df.dropna(inplace=True)
+        
+        if len(df) < 30:
+            raise HTTPException(status_code=400, detail="Not enough historical quotes to backtest (min 30 needed)")
+            
+        result = _run_backtest(df, req.strategy, req.param_fast, req.param_slow)
+        return result
+    except Exception as e:
+        logger.exception(f"Backtest execution failed for {ticker}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+class ChatCopilotRequest(BaseModel):
+    ticker: str
+    messages: list
+
+@app.post("/api/chat-copilot")
+async def chat_copilot_endpoint(req: ChatCopilotRequest):
+    """Consult the premium AI Wall Street Quant Copilot."""
+    ticker = req.ticker.upper().strip()
+    if not ticker:
+        raise HTTPException(status_code=400, detail="Invalid ticker provided")
+    try:
+        import yfinance as yf
+        t = yf.Ticker(ticker)
+        info = t.info or {}
+    except Exception as e:
+        logger.error(f"Failed to fetch stock telemetry for chat copilot: {e}")
+        info = {}
+
+    system_prompt = f"""You are an elite Wall Street Quant Strategist, Lead Risk Analyst, and Senior Hedge Fund Analyst.
+Your goal is to provide deep, analytical, quantitative, and fundamental insights on stock '{ticker}' for a sophisticated portfolio manager.
+
+Here is the real-time financial telemetry for {ticker}:
+- Company Name: {info.get('longName', ticker)}
+- Sector/Industry: {info.get('sector', 'N/A')} / {info.get('industry', 'N/A')}
+- Current Price: ${info.get('currentPrice') or info.get('previousClose') or 'N/A'}
+- PE Ratio (Trailing): {info.get('trailingPE', 'N/A')}
+- PE Ratio (Forward): {info.get('forwardPE', 'N/A')}
+- PEG Ratio: {info.get('pegRatio', 'N/A')}
+- Price to Book (PB): {info.get('priceToBook', 'N/A')}
+- Return on Equity (ROE): {info.get('returnOnEquity', 'N/A')}
+- Profit Margin: {info.get('profitMargins', 'N/A')}
+- Debt to Equity: {info.get('debtToEquity', 'N/A')}
+- Total Cash: ${info.get('totalCash', 'N/A')}
+- Total Debt: ${info.get('totalDebt', 'N/A')}
+- Beta (Volatility): {info.get('beta', 'N/A')}
+- Revenue Growth (YoY): {info.get('revenueGrowth', 'N/A')}
+
+Core Rules for Your Communication:
+1. ALWAYS respond in natural, professional, and sophisticated Taiwan Chinese (繁體中文). Use standard local Taiwanese financial terminology (例如：營收、淨利、本益比、股東權益報酬率 ROE、資產負債表、部位、避險、多頭/空頭).
+2. Be objective, direct, and analytical. Do not give generic, disclaimer-filled responses or standard templates. Think and speak like a chief strategist at a top-tier hedge fund (e.g., Renaissance Technologies, Millennium, or Point72).
+3. Use structured formatting, rich markdown bullet points, and clean math where appropriate. If the user asks about valuation or risk, refer to the provided financial telemetry to formulate your answer.
+"""
+
+    full_messages = [{"role": "system", "content": system_prompt}] + req.messages
+    
+    try:
+        from agent.auxiliary_client import call_llm, extract_content_or_reasoning
+        response = call_llm(
+            task="chat",
+            messages=full_messages,
+            temperature=0.4
+        )
+        content = extract_content_or_reasoning(response)
+        return {"success": True, "content": content}
+    except Exception as e:
+        logger.exception("AI Copilot request failed")
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     logger.info("Starting Standalone Unified Finance Terminal on http://127.0.0.1:9200")

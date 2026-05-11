@@ -24,6 +24,21 @@ function App() {
   const [selectedReportFilename, setSelectedReportFilename] = useState("");
   const [loadedReport, setLoadedReport] = useState(null);
   const [valuating, setValuating] = useState(false);
+  const [activeStats, setActiveStats] = useState(null);
+
+  // Wall Street AI Copilot State
+  const [copilotOpen, setCopilotOpen] = useState(false);
+  const [chatHistory, setChatHistory] = useState([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
+
+  // Strategy Backtesting State
+  const [selectedStrategy, setSelectedStrategy] = useState("SMA_Crossover");
+  const [backtestPeriod, setBacktestPeriod] = useState("1y");
+  const [paramFast, setParamFast] = useState(20);
+  const [paramSlow, setParamSlow] = useState(50);
+  const [backtestResult, setBacktestResult] = useState(null);
+  const [backtesting, setBacktesting] = useState(false);
 
   // Sync to local OpenD API & Watchlist Quotes
   function syncQuantData() {
@@ -198,6 +213,9 @@ function App() {
       .then(res => {
         if (res.success) {
           setLoadedReport(res.markdown);
+          if (res.stats) {
+            setActiveStats(res.stats);
+          }
           fetchHistoricalReports(activeChartTicker);
         } else {
           alert("❌ Valuation failed. Please verify ticker code.");
@@ -205,6 +223,62 @@ function App() {
       })
       .catch(() => alert("❌ Connect error: standalone core offline."))
       .finally(() => setValuating(false));
+  }
+
+  // Wall Street AI Copilot Chat Trigger
+  function sendChatMessage() {
+    if (!chatInput.trim() || chatLoading) return;
+    const userMsg = { role: "user", content: chatInput };
+    const newHistory = [...chatHistory, userMsg];
+    setChatHistory(newHistory);
+    setChatInput("");
+    setChatLoading(true);
+    
+    fetch("/api/chat-copilot", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ticker: activeChartTicker, messages: newHistory })
+    })
+      .then(r => r.json())
+      .then(res => {
+        if (res.success) {
+          setChatHistory([...newHistory, { role: "assistant", content: res.content }]);
+        } else {
+          setChatHistory([...newHistory, { role: "assistant", content: "❌ 系統呼叫失敗，請稍後再試。" }]);
+        }
+      })
+      .catch(() => {
+        setChatHistory([...newHistory, { role: "assistant", content: "❌ 無法與分析伺服器連線。" }]);
+      })
+      .finally(() => {
+        setChatLoading(false);
+      });
+  }
+
+  // Vectorized Backtesting Trigger
+  function runBacktest() {
+    setBacktesting(true);
+    fetch("/api/backtest", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ticker: activeChartTicker,
+        strategy: selectedStrategy,
+        param_fast: parseFloat(paramFast),
+        param_slow: parseFloat(paramSlow),
+        period: backtestPeriod
+      })
+    })
+      .then(r => r.json())
+      .then(res => {
+        if (res.success) {
+          setBacktestResult(res);
+        } else {
+          alert("❌ Backtest failed: " + (res.detail || "Error"));
+        }
+      })
+      .catch(() => alert("❌ Backtest connect error."))
+      .finally(() => setBacktesting(false));
   }
 
   // Lifecycle Initialization
@@ -218,6 +292,9 @@ function App() {
     const cleanSym = symbol.replace("US.", "").replace("HK.", "");
     setActiveChartTicker(cleanSym);
     fetchHistoricalReports(cleanSym);
+    setChatHistory([]);
+    setActiveStats(null);
+    setBacktestResult(null);
   }
 
   // Markdown renderer
@@ -228,6 +305,329 @@ function App() {
     } catch (e) {
       return { __html: `<p class="text-rose-400">Failed to render report: ${e.message}</p>` };
     }
+  }
+
+  // ─── PREMIUM SVG DATA VISUALIZATIONS ───
+
+  function renderRadarSVG(stats) {
+    if (!stats) return null;
+    
+    const valUpside = stats.fcf_model ? stats.fcf_model.upside_pct : 0;
+    const valueVal = Math.min(100, Math.max(15, valUpside + 50));
+    
+    const growthRate = stats.est_growth_g1 || 0.10;
+    const growthVal = Math.min(100, Math.max(15, growthRate * 400));
+    
+    const deRatio = stats.debt_equity || 50;
+    const safetyVal = Math.min(100, Math.max(15, 100 - (deRatio / 3)));
+    
+    const roeRatio = stats.roe || 0.15;
+    const efficiencyVal = Math.min(100, Math.max(15, roeRatio * 300));
+    
+    const betaRatio = stats.beta || 1.0;
+    const momentumVal = Math.min(100, Math.max(15, 100 - Math.abs(1 - betaRatio) * 40));
+
+    const cx = 110;
+    const cy = 110;
+    const r = 70;
+    
+    const angles = [
+      -Math.PI / 2,
+      -Math.PI / 2 + (2 * Math.PI / 5),
+      -Math.PI / 2 + (4 * Math.PI / 5),
+      -Math.PI / 2 + (6 * Math.PI / 5),
+      -Math.PI / 2 + (8 * Math.PI / 5),
+    ];
+
+    const labels = ["成長性", "獲利效率", "波動抗性", "債務安全", "估值優勢"];
+    const values = [growthVal, efficiencyVal, momentumVal, safetyVal, valueVal];
+
+    const getPoint = (angle, valPct) => {
+      const radius = (valPct / 100) * r;
+      return {
+        x: cx + radius * Math.cos(angle),
+        y: cy + radius * Math.sin(angle)
+      };
+    };
+
+    const grids = [20, 40, 60, 80, 100];
+    const points = angles.map((angle, i) => getPoint(angle, values[i]));
+    const pointsStr = points.map(p => `${p.x},${p.y}`).join(" ");
+
+    return (
+      <svg className="w-[180px] h-[180px]" viewBox="0 0 220 220">
+        <defs>
+          <radialGradient id="radarGlow" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stopColor="#10b981" stopOpacity="0.4" />
+            <stop offset="100%" stopColor="#047857" stopOpacity="0.0" />
+          </radialGradient>
+        </defs>
+
+        {grids.map((g, idx) => {
+          const gridPoints = angles.map(angle => getPoint(angle, g));
+          const gridPointsStr = gridPoints.map(p => `${p.x},${p.y}`).join(" ");
+          return (
+            <polygon 
+              key={idx} 
+              points={gridPointsStr} 
+              fill="none" 
+              stroke="rgba(255, 255, 255, 0.05)" 
+              strokeWidth="1" 
+            />
+          );
+        })}
+
+        {angles.map((angle, i) => {
+          const outer = getPoint(angle, 100);
+          return (
+            <line 
+              key={i} 
+              x1={cx} 
+              y1={cy} 
+              x2={outer.x} 
+              y2={outer.y} 
+              stroke="rgba(255, 255, 255, 0.08)" 
+              strokeWidth="1" 
+              strokeDasharray="2,2"
+            />
+          );
+        })}
+
+        <polygon 
+          points={pointsStr} 
+          fill="url(#radarGlow)" 
+          stroke="#10b981" 
+          strokeWidth="2"
+        />
+
+        {points.map((p, i) => (
+          <circle 
+            key={i} 
+            cx={p.x} 
+            cy={p.y} 
+            r="3.5" 
+            fill="#10b981" 
+            stroke="#04040a" 
+            strokeWidth="1.5" 
+          />
+        ))}
+
+        {angles.map((angle, i) => {
+          const outer = getPoint(angle, 120);
+          let textAnchor = "middle";
+          if (outer.x > cx + 10) textAnchor = "start";
+          if (outer.x < cx - 10) textAnchor = "end";
+          return (
+            <text 
+              key={i} 
+              x={outer.x} 
+              y={outer.y + 4} 
+              fill="rgba(255, 255, 255, 0.6)" 
+              fontSize="10" 
+              fontFamily="monospace"
+              fontWeight="bold"
+              textAnchor={textAnchor}
+            >
+              {labels[i]}
+            </text>
+          );
+        })}
+      </svg>
+    );
+  }
+
+  function renderDistributionSVG(stats) {
+    if (!stats || !stats.fcf_model || !stats.fcf_model.distribution) return null;
+    
+    const dist = stats.fcf_model.distribution;
+    const counts = dist.map(d => d.count);
+    const maxCount = Math.max(...counts, 1);
+    
+    const width = 220;
+    const height = 110;
+    const padding = 15;
+    
+    const scaleY = (count) => {
+      const graphHeight = height - padding * 2;
+      return height - padding - (count / maxCount) * graphHeight;
+    };
+    
+    const scaleX = (idx) => {
+      const graphWidth = width - padding * 2;
+      return padding + (idx / (dist.length - 1)) * graphWidth;
+    };
+    
+    const points = dist.map((d, i) => ({
+      x: scaleX(i),
+      y: scaleY(d.count)
+    }));
+    
+    let pathStr = `M ${points[0].x} ${height - padding} `;
+    points.forEach(p => {
+      pathStr += `L ${p.x} ${p.y} `;
+    });
+    pathStr += `L ${points[points.length - 1].x} ${height - padding} Z`;
+    
+    let lineStr = `M ${points[0].x} ${points[0].y} `;
+    points.forEach(p => {
+      lineStr += `L ${p.x} ${p.y} `;
+    });
+
+    const currPrice = stats.current_price || 100;
+    const meanVal = stats.fcf_model.mean || 110;
+    const p25Val = stats.fcf_model.p25 || 85;
+    
+    const minBin = dist[0].bin_start;
+    const maxBin = dist[dist.length - 1].bin_end;
+    const binRange = maxBin - minBin;
+    
+    const getXOfVal = (val) => {
+      const pct = (val - minBin) / binRange;
+      const graphWidth = width - padding * 2;
+      return padding + Math.min(1, Math.max(0, pct)) * graphWidth;
+    };
+
+    const curX = getXOfVal(currPrice);
+    const meanX = getXOfVal(meanVal);
+    const p25X = getXOfVal(p25Val);
+
+    return (
+      <div className="flex flex-col items-center w-full">
+        <svg className="w-[180px] h-[110px]" viewBox="0 0 220 110">
+          <defs>
+            <linearGradient id="distGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#06b6d4" stopOpacity="0.4" />
+              <stop offset="100%" stopColor="#0891b2" stopOpacity="0.0" />
+            </linearGradient>
+          </defs>
+
+          <path d={pathStr} fill="url(#distGrad)" />
+          <path d={lineStr} fill="none" stroke="#06b6d4" strokeWidth="2" />
+          
+          <line 
+            x1={padding} 
+            y1={height - padding} 
+            x2={width - padding} 
+            y2={height - padding} 
+            stroke="rgba(255,255,255,0.15)" 
+            strokeWidth="1" 
+          />
+
+          {/* Current Price Line */}
+          <line 
+            x1={curX} 
+            y1={padding} 
+            x2={curX} 
+            y2={height - padding} 
+            stroke="#fbbf24" 
+            strokeWidth="1.5" 
+            strokeDasharray="2,2" 
+          />
+          
+          {/* Expected Mean Line */}
+          <line 
+            x1={meanX} 
+            y1={padding} 
+            x2={meanX} 
+            y2={height - padding} 
+            stroke="#34d399" 
+            strokeWidth="1.5" 
+            strokeDasharray="2,2" 
+          />
+
+          {/* P25 Safety Line */}
+          <line 
+            x1={p25X} 
+            y1={padding} 
+            x2={p25X} 
+            y2={height - padding} 
+            stroke="#f87171" 
+            strokeWidth="1.5" 
+            strokeDasharray="2,2" 
+          />
+        </svg>
+        
+        <div className="grid grid-cols-3 gap-1 text-[8px] font-mono mt-1.5 w-full text-center">
+          <div className="flex flex-col items-center">
+            <span className="text-red-400 font-bold">P25 支撐</span>
+            <span className="text-slate-400 mt-0.5">${p25Val}</span>
+          </div>
+          <div className="flex flex-col items-center">
+            <span className="text-amber-400 font-bold">現價</span>
+            <span className="text-slate-400 mt-0.5">${currPrice}</span>
+          </div>
+          <div className="flex flex-col items-center">
+            <span className="text-emerald-400 font-bold">期望估值</span>
+            <span className="text-slate-400 mt-0.5">${meanVal}</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  function renderEquityCurveSVG(res) {
+    if (!res || !res.equity_curve || res.equity_curve.length === 0) return null;
+    
+    const curve = res.equity_curve;
+    const vals = curve.map(c => c.value);
+    const maxVal = Math.max(...vals, 100000);
+    const minVal = Math.min(...vals, 80000);
+    const valRange = maxVal - minVal || 1;
+    
+    const width = 480;
+    const height = 110;
+    const padding = 15;
+    
+    const scaleY = (val) => {
+      const graphHeight = height - padding * 2;
+      return height - padding - ((val - minVal) / valRange) * graphHeight;
+    };
+    
+    const scaleX = (idx) => {
+      const graphWidth = width - padding * 2;
+      return padding + (idx / (curve.length - 1)) * graphWidth;
+    };
+    
+    let areaPointsStr = `M ${padding} ${height - padding} `;
+    curve.forEach((c, i) => {
+      areaPointsStr += `L ${scaleX(i)} ${scaleY(c.value)} `;
+    });
+    areaPointsStr += `L ${scaleX(curve.length - 1)} ${height - padding} Z`;
+    
+    let linePathStr = `M ${scaleX(0)} ${scaleY(curve[0].value)} `;
+    curve.forEach((c, i) => {
+      if (i > 0) linePathStr += `L ${scaleX(i)} ${scaleY(c.value)} `;
+    });
+
+    return (
+      <svg className="w-full h-[110px]" viewBox={`0 0 ${width} ${height}`}>
+        <defs>
+          <linearGradient id="curveGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#10b981" stopOpacity="0.25" />
+            <stop offset="100%" stopColor="#10b981" stopOpacity="0.0" />
+          </linearGradient>
+        </defs>
+
+        <path d={areaPointsStr} fill="url(#curveGrad)" />
+        <path d={linePathStr} fill="none" stroke="#10b981" strokeWidth="2" />
+        
+        <line 
+          x1={padding} 
+          y1={height - padding} 
+          x2={width - padding} 
+          y2={height - padding} 
+          stroke="rgba(255,255,255,0.08)" 
+          strokeWidth="1" 
+        />
+        
+        <text x={padding} y={padding + 5} fill="rgba(255,255,255,0.4)" fontSize="8" fontFamily="monospace">
+          ${maxVal.toLocaleString(undefined, {maximumFractionDigits: 0})}
+        </text>
+        <text x={padding} y={height - padding - 2} fill="rgba(255,255,255,0.4)" fontSize="8" fontFamily="monospace">
+          ${minVal.toLocaleString(undefined, {maximumFractionDigits: 0})}
+        </text>
+      </svg>
+    );
   }
 
   // Global aggregate metrics
@@ -267,6 +667,16 @@ function App() {
               <span className={`w-1.5 h-1.5 rounded-full ${connStatus.futu_opend ? "bg-emerald-400 animate-pulse" : "bg-amber-400 animate-pulse"}`}></span>
               {connStatus.futu_opend ? "OpenD Link Active" : "yFinance Fallback Engine"}
             </div>
+
+            <button 
+              onClick={() => setCopilotOpen(!copilotOpen)}
+              className="flex items-center gap-2 px-4 py-2 bg-emerald-500/10 border border-emerald-500/30 hover:bg-emerald-500/20 active:scale-95 text-xs font-mono font-bold text-emerald-400 rounded-xl transition-all cursor-pointer"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+              </svg>
+              AI COPILOT
+            </button>
 
             <button 
               onClick={syncQuantData}
@@ -542,6 +952,132 @@ function App() {
             />
           </div>
 
+          {/* 🏃 Vectorized Quant Backtesting Workspace */}
+          <div className="border border-white/[0.05] bg-[#0b0b14]/30 backdrop-blur-md rounded-2xl overflow-hidden shadow-2xl flex flex-col p-5 gap-4">
+            <div className="flex justify-between items-center border-b border-white/[0.04] pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></div>
+                <h3 className="text-xs font-extrabold text-cyan-400 uppercase tracking-widest font-mono">
+                  Vectorized Backtesting Workspace
+                </h3>
+              </div>
+              <span className="text-[9px] text-slate-500 font-mono uppercase tracking-wider">Fast Simulation Engine</span>
+            </div>
+
+            {/* Backtest Controls Form */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs font-mono">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[9px] text-slate-400 uppercase">Strategy</label>
+                <select
+                  value={selectedStrategy}
+                  onChange={(e) => setSelectedStrategy(e.target.value)}
+                  className="bg-black/40 border border-white/[0.08] rounded-lg px-2.5 py-2 text-slate-300 focus:outline-none focus:border-cyan-500 cursor-pointer"
+                >
+                  <option value="SMA_Crossover">均線黃金交叉</option>
+                  <option value="RSI_Strategy">RSI 超買超賣</option>
+                  <option value="Bollinger_Strategy">布林通道反彈</option>
+                </select>
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[9px] text-slate-400 uppercase">
+                  {selectedStrategy === "SMA_Crossover" ? "Fast SMA" : selectedStrategy === "RSI_Strategy" ? "RSI Low" : "BB Period"}
+                </label>
+                <input
+                  type="number"
+                  value={paramFast}
+                  onChange={(e) => setParamFast(e.target.value)}
+                  className="bg-black/40 border border-white/[0.08] rounded-lg px-2.5 py-1.5 text-slate-300 focus:outline-none focus:border-cyan-500"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[9px] text-slate-400 uppercase">
+                  {selectedStrategy === "SMA_Crossover" ? "Slow SMA" : selectedStrategy === "RSI_Strategy" ? "RSI High" : "BB Dev"}
+                </label>
+                <input
+                  type="number"
+                  value={paramSlow}
+                  onChange={(e) => setParamSlow(e.target.value)}
+                  className="bg-black/40 border border-white/[0.08] rounded-lg px-2.5 py-1.5 text-slate-300 focus:outline-none focus:border-cyan-500"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[9px] text-slate-400 uppercase">Period</label>
+                <select
+                  value={backtestPeriod}
+                  onChange={(e) => setBacktestPeriod(e.target.value)}
+                  className="bg-black/40 border border-white/[0.08] rounded-lg px-2.5 py-2 text-slate-300 focus:outline-none focus:border-cyan-500 cursor-pointer"
+                >
+                  <option value="1y">1 Year</option>
+                  <option value="2y">2 Years</option>
+                  <option value="5y">5 Years</option>
+                  <option value="10y">10 Years</option>
+                </select>
+              </div>
+            </div>
+
+            <button
+              onClick={runBacktest}
+              disabled={backtesting}
+              className={`w-full py-2.5 rounded-xl text-xs font-mono font-bold tracking-wider uppercase transition-all border ${
+                backtesting 
+                  ? "bg-amber-500/10 border-amber-500/25 text-amber-500 animate-pulse" 
+                  : "bg-cyan-500 text-black hover:bg-cyan-400 border-transparent shadow-lg shadow-cyan-500/10 cursor-pointer"
+              }`}
+            >
+              {backtesting ? "⚙️ Simulating Trades..." : "🏃 Run Backtest Simulation"}
+            </button>
+
+            {/* Backtest Results Area */}
+            {backtestResult && (
+              <div className="flex flex-col gap-4 border-t border-white/[0.04] pt-4">
+                {/* Metrics Grid */}
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                  <div className="bg-black/30 border border-white/[0.03] p-3 rounded-xl flex flex-col items-center">
+                    <span className="text-[8px] text-slate-500 uppercase tracking-wider font-mono">總報酬率</span>
+                    <span className={`text-xs font-black font-mono mt-1 ${backtestResult.total_return >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                      {backtestResult.total_return >= 0 ? "+" : ""}{backtestResult.total_return}%
+                    </span>
+                  </div>
+                  <div className="bg-black/30 border border-white/[0.03] p-3 rounded-xl flex flex-col items-center">
+                    <span className="text-[8px] text-slate-500 uppercase tracking-wider font-mono">年化報酬率</span>
+                    <span className="text-xs font-black font-mono text-slate-200 mt-1">
+                      {backtestResult.annualized_return}%
+                    </span>
+                  </div>
+                  <div className="bg-black/30 border border-white/[0.03] p-3 rounded-xl flex flex-col items-center">
+                    <span className="text-[8px] text-slate-500 uppercase tracking-wider font-mono">最大回撤</span>
+                    <span className="text-xs font-black font-mono text-rose-400 mt-1">
+                      {backtestResult.max_drawdown}%
+                    </span>
+                  </div>
+                  <div className="bg-black/30 border border-white/[0.03] p-3 rounded-xl flex flex-col items-center">
+                    <span className="text-[8px] text-slate-500 uppercase tracking-wider font-mono">勝率</span>
+                    <span className="text-xs font-black font-mono text-slate-200 mt-1">
+                      {backtestResult.win_rate}%
+                    </span>
+                  </div>
+                  <div className="bg-black/30 border border-white/[0.03] p-3 rounded-xl flex flex-col items-center col-span-2 md:col-span-1">
+                    <span className="text-[8px] text-slate-500 uppercase tracking-wider font-mono">夏普比率</span>
+                    <span className="text-xs font-black font-mono text-cyan-400 mt-1">
+                      {backtestResult.sharpe_ratio}
+                    </span>
+                  </div>
+                </div>
+
+                {/* SVG Equity Curve */}
+                <div className="bg-black/20 border border-white/[0.03] p-4 rounded-xl flex flex-col items-center">
+                  <span className="text-[9px] text-slate-500 font-mono uppercase tracking-wider mb-2 w-full text-left">
+                    📈 Portfolio Value Over Time
+                  </span>
+                  {renderEquityCurveSVG(backtestResult)}
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Orders log book */}
           <div className="border border-white/[0.05] bg-[#0b0b14]/20 backdrop-blur-md rounded-2xl overflow-hidden shadow-xl flex flex-col">
             <div className="px-5 py-3 border-b border-white/[0.05] flex justify-between items-center">
@@ -631,11 +1167,34 @@ function App() {
                   </div>
                 </div>
               ) : loadedReport ? (
-                /* Styled Obsidian Markdown Content */
-                <article 
-                  className="prose prose-invert prose-emerald text-xs leading-relaxed max-w-none text-slate-300 font-mono"
-                  dangerouslySetInnerHTML={renderMarkdown(loadedReport)}
-                />
+                <div className="flex flex-col gap-6">
+                  {/* Render Visualizations if activeStats exists */}
+                  {activeStats && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6 border-b border-white/[0.04] pb-6">
+                      {/* Radar Chart Panel */}
+                      <div className="bg-[#0b0b14]/35 border border-white/[0.04] rounded-xl p-4 flex flex-col items-center">
+                        <span className="text-[10px] text-emerald-400 font-mono uppercase tracking-wider mb-3 w-full text-left font-bold">
+                          🎯 Fundamental Radar
+                        </span>
+                        {renderRadarSVG(activeStats)}
+                      </div>
+
+                      {/* Distribution Histogram Panel */}
+                      <div className="bg-[#0b0b14]/35 border border-white/[0.04] rounded-xl p-4 flex flex-col items-center">
+                        <span className="text-[10px] text-emerald-400 font-mono uppercase tracking-wider mb-3 w-full text-left font-bold">
+                          📈 Monte Carlo FCF Probabilities
+                        </span>
+                        {renderDistributionSVG(activeStats)}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Styled Obsidian Markdown Content */}
+                  <article 
+                    className="prose prose-invert prose-emerald text-xs leading-relaxed max-w-none text-slate-300 font-mono"
+                    dangerouslySetInnerHTML={renderMarkdown(loadedReport)}
+                  />
+                </div>
               ) : (
                 <div className="flex-1 flex flex-col items-center justify-center text-center text-slate-500 text-xs py-44 gap-4">
                   <svg className="w-8 h-8 text-slate-600 mx-auto mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
@@ -669,6 +1228,95 @@ function App() {
         </div>
 
       </main>
+
+      {/* ─────────────────── SLIDING AI COPILOT DRAWER (RIGHT) ─────────────────── */}
+      <div className={`fixed top-0 right-0 h-full w-[450px] bg-[#070714]/95 backdrop-blur-xl border-l border-white/[0.08] shadow-2xl z-50 flex flex-col transform transition-transform duration-300 ease-in-out ${
+        copilotOpen ? "translate-x-0" : "translate-x-full"
+      }`}>
+        {/* Drawer Header */}
+        <div className="p-5 border-b border-white/[0.06] flex items-center justify-between bg-black/20">
+          <div className="flex items-center gap-2.5">
+            <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></div>
+            <div>
+              <h3 className="text-sm font-black text-white font-mono tracking-wider uppercase">Wall Street Copilot Conclave</h3>
+              <p className="text-[9px] text-slate-500 font-mono tracking-wider uppercase mt-0.5">Quant Helper • {activeChartTicker}</p>
+            </div>
+          </div>
+          <button 
+            onClick={() => setCopilotOpen(false)}
+            className="p-1.5 hover:bg-white/[0.05] rounded-lg border border-transparent hover:border-white/[0.08] text-slate-400 hover:text-white transition-all cursor-pointer"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Chat Transcript Panel */}
+        <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-4 font-mono text-xs">
+          {chatHistory.length === 0 ? (
+            <div className="flex-1 flex flex-col items-center justify-center text-center text-slate-500 py-20 gap-4">
+              <div className="p-3 bg-emerald-500/5 rounded-2xl border border-emerald-500/10">
+                <svg className="w-8 h-8 text-emerald-500/60" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                </svg>
+              </div>
+              <div>
+                <p className="font-extrabold text-slate-400 uppercase tracking-wider">Quant AI Assistant Idle</p>
+                <p className="text-[9px] text-slate-600 mt-1 max-w-[280px] leading-relaxed">
+                  請在此向 AI 助理諮詢關於 {activeChartTicker} 的量化策略、財務評估或估值處方。
+                </p>
+              </div>
+            </div>
+          ) : (
+            chatHistory.map((msg, i) => {
+              const isUser = msg.role === "user";
+              return (
+                <div key={i} className={`flex flex-col ${isUser ? "items-end" : "items-start"} max-w-[90%] ${isUser ? "self-end" : "self-start"}`}>
+                  <span className="text-[8px] text-slate-500 uppercase tracking-wider mb-1 px-1">{isUser ? "You" : "WallStreet AI"}</span>
+                  <div className={`p-4 rounded-2xl border leading-relaxed text-[11px] font-sans ${
+                    isUser 
+                      ? "bg-emerald-500/5 border-emerald-500/15 text-slate-200 rounded-tr-none" 
+                      : "bg-[#0b0b1a]/60 border-white/[0.04] text-slate-300 rounded-tl-none prose prose-invert prose-emerald max-w-none text-xs"
+                  }`}>
+                    {isUser ? (
+                      msg.content
+                    ) : (
+                      <div dangerouslySetInnerHTML={renderMarkdown(msg.content)} />
+                    )}
+                  </div>
+                </div>
+              );
+            })
+          )}
+          {chatLoading && (
+            <div className="flex items-center gap-2 self-start bg-[#0b0b1a]/40 border border-white/[0.03] p-3 rounded-2xl rounded-tl-none">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-bounce" style={{ animationDelay: "0ms" }}></span>
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-bounce" style={{ animationDelay: "150ms" }}></span>
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-bounce" style={{ animationDelay: "300ms" }}></span>
+            </div>
+          )}
+        </div>
+
+        {/* Chat Input Panel */}
+        <div className="p-4 border-t border-white/[0.06] bg-black/20 flex gap-2">
+          <input 
+            type="text"
+            value={chatInput}
+            onChange={(e) => setChatInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") sendChatMessage(); }}
+            placeholder={`Ask about ${activeChartTicker} or quant metrics...`}
+            className="flex-1 bg-black/40 border border-white/[0.08] focus:border-emerald-500/50 rounded-xl px-4 py-2.5 text-xs text-slate-300 focus:outline-none transition-all font-sans"
+          />
+          <button 
+            onClick={sendChatMessage}
+            disabled={chatLoading || !chatInput.trim()}
+            className="px-4 py-2.5 bg-emerald-500 hover:bg-emerald-400 disabled:bg-emerald-500/20 disabled:text-slate-500 text-black font-bold text-xs rounded-xl transition-all cursor-pointer"
+          >
+            Send
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
