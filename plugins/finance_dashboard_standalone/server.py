@@ -802,6 +802,8 @@ recommendation: {rating}
 > **當前市場收盤價**：${stats['current_price']:.2f}
 > **研究框架**：不確定性雙軌隨機模擬估值（Stochastic Hybrid Valuation）
 
+{visualizations_html}
+
 ---
 
 ## 一、 執行摘要與投資論點 (Executive Summary & Investment Thesis)
@@ -847,8 +849,6 @@ recommendation: {rating}
 ## 三、 雙軌蒙地卡羅隨機模擬估值 (Double-Track Monte Carlo Valuation)
 
 為避免傳統單一 DCF 模型因重資本開支（Deposition CapEx）或研發再投資（R&D Reinvestment）而扭曲價值，本系統特別對其進行了雙軌 10,000 次隨機估值推演。
-
-{visualizations_html}
 
 ### 📊 估值模型動態隨機變數假設 (Stochastic Model Assumptions)：
 本報告的蒙地卡羅模擬參數並非採用固定死板的硬編碼，而是**根據個股最新的實際市場風險波動度 (Beta) 與成長動能 (Historical Growth Rates) 進行動態智能估算**：
