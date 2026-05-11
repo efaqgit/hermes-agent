@@ -1,0 +1,5 @@
+name: moomoo_quant
+version: 1.0.0
+description: Moomoo Quant Trading and Portfolio Analysis
+author: Kenneth
+enabled: true

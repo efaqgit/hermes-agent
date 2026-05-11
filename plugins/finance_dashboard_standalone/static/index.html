@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh-TW" class="dark h-full bg-[#05050a]">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Unified Quant & Finance Terminal (Standalone)</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            border: 'rgba(255, 255, 255, 0.08)',
+            background: '#05050a',
+            foreground: '#e2e8f0',
+            card: 'rgba(10, 10, 20, 0.45)',
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Google Fonts Outfit & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+
+  <!-- Lucide Icons CDN -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <!-- Marked.js CDN (Markdown parser) -->
+  <script src="https://unpkg.com/marked@12.0.0/marked.min.js"></script>
+
+  <!-- React & Babel CDN (Zero Build runtime compiler) -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+
+  <style>
+    body {
+      font-family: 'Outfit', sans-serif;
+    }
+    .font-mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+    /* Dynamic Glowing Scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.2);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(16, 185, 129, 0.2);
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(16, 185, 129, 0.4);
+    }
+  </style>
+</head>
+<body class="h-full text-slate-200">
+
+  <!-- React Root -->
+  <div id="root" class="h-full"></div>
+
+  <!-- React App Core using Babel (ES6 React script) -->
+  <script type="text/babel" src="/app.js"></script>
+
+</body>
+</html>
