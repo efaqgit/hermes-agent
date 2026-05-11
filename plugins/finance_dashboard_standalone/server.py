@@ -560,6 +560,7 @@ def _run_monte_carlo(ticker: str) -> dict:
 
 def _generate_markdown_report(stats: dict) -> str:
     from datetime import datetime
+    import math
     ticker = stats["ticker"]
     
     roe_pct = f"{stats['roe'] * 100:.2f}%" if stats["roe"] is not None else "N/A"
@@ -580,6 +581,161 @@ def _generate_markdown_report(stats: dict) -> str:
         rating = "中性持有 (Hold / Neutral)"
     else:
         rating = "高估避險 (Reduce / Avoid)"
+    
+    # ─── GENERATE INLINE VECTOR SVGS FOR OBSIDIAN REPORT ───
+    
+    # 1. Fundamental Radar SVG
+    val_upside = stats["fcf_model"]["upside_pct"]
+    value_val = min(100.0, max(15.0, val_upside + 50.0))
+    
+    growth_rate = stats.get("est_growth_g1") or 0.10
+    growth_val = min(100.0, max(15.0, growth_rate * 400.0))
+    
+    de_ratio = stats.get("debt_equity") or 50.0
+    safety_val = min(100.0, max(15.0, 100.0 - (de_ratio / 3.0)))
+    
+    roe_ratio = stats.get("roe") or 0.15
+    efficiency_val = min(100.0, max(15.0, roe_ratio * 300.0))
+    
+    beta_ratio = stats.get("beta") or 1.0
+    momentum_val = min(100.0, max(15.0, 100.0 - abs(1.0 - beta_ratio) * 40.0))
+    
+    cx, cy, r_limit = 110.0, 110.0, 70.0
+    angles = [
+        -math.pi / 2,
+        -math.pi / 2 + (2 * math.pi / 5),
+        -math.pi / 2 + (4 * math.pi / 5),
+        -math.pi / 2 + (6 * math.pi / 5),
+        -math.pi / 2 + (8 * math.pi / 5),
+    ]
+    labels = ["成長性", "獲利效率", "波動抗性", "債務安全", "估值優勢"]
+    values = [growth_val, efficiency_val, momentum_val, safety_val, value_val]
+    
+    def get_radar_point(angle, val_pct):
+        radius = (val_pct / 100.0) * r_limit
+        return {
+            "x": cx + radius * math.cos(angle),
+            "y": cy + radius * math.sin(angle)
+        }
+        
+    grids = [20, 40, 60, 80, 100]
+    grid_polygons = ""
+    for g in grids:
+        g_pts = [get_radar_point(angle, g) for angle in angles]
+        pts_str = " ".join([f"{p['x']:.1f},{p['y']:.1f}" for p in g_pts])
+        grid_polygons += f'  <polygon points="{pts_str}" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="1" />\n'
+        
+    axis_lines = ""
+    for angle in angles:
+        outer = get_radar_point(angle, 100.0)
+        axis_lines += f'  <line x1="{cx:.1f}" y1="{cy:.1f}" x2="{outer["x"]:.1f}" y2="{outer["y"]:.1f}" stroke="rgba(255,255,255,0.12)" stroke-width="1" stroke-dasharray="2,2" />\n'
+        
+    pts = [get_radar_point(angles[i], values[i]) for i in range(5)]
+    pts_str = " ".join([f"{p['x']:.1f},{p['y']:.1f}" for p in pts])
+    
+    dots = ""
+    for p in pts:
+        dots += f'  <circle cx="{p["x"]:.1f}" cy="{p["y"]:.1f}" r="3.5" fill="#10b981" stroke="#04040a" stroke-width="1.5" />\n'
+        
+    labels_markup = ""
+    for i, angle in enumerate(angles):
+        outer = get_radar_point(angle, 122.0)
+        text_anchor = "middle"
+        if outer["x"] > cx + 10.0:
+            text_anchor = "start"
+        elif outer["x"] < cx - 10.0:
+            text_anchor = "end"
+        labels_markup += f'  <text x="{outer["x"]:.1f}" y="{outer["y"]+4:.1f}" fill="rgba(255,255,255,0.7)" font-size="10" font-family="monospace" font-weight="bold" text-anchor="{text_anchor}">{labels[i]}</text>\n'
+        
+    radar_svg = f"""<svg width="220" height="220" viewBox="0 0 220 220" style="background:#070712; border:1px solid rgba(255,255,255,0.08); border-radius:12px;">
+  <defs>
+    <radialGradient id="radarGlow_md" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#10b981" stop-opacity="0.4" />
+      <stop offset="100%" stop-color="#047857" stop-opacity="0.0" />
+    </radialGradient>
+  </defs>
+{grid_polygons}
+{axis_lines}
+  <polygon points="{pts_str}" fill="url(#radarGlow_md)" stroke="#10b981" stroke-width="2" />
+{dots}
+{labels_markup}
+</svg>"""
+
+    # 2. Monte Carlo Probability Wave SVG
+    dist = stats["fcf_model"]["distribution"]
+    counts = [d["count"] for d in dist]
+    max_count = max(counts) if counts else 1
+    
+    w_width, h_height, p_pad = 220, 110, 15
+    
+    def scale_y(count):
+        g_h = h_height - p_pad * 2
+        return h_height - p_pad - (count / max_count) * g_h
+        
+    def scale_x(idx):
+        g_w = w_width - p_pad * 2
+        return p_pad + (idx / (len(dist) - 1)) * g_w
+        
+    wave_pts = [{"x": scale_x(i), "y": scale_y(d["count"])} for i, d in enumerate(dist)]
+    
+    path_str = f"M {wave_pts[0]['x']:.1f} {h_height - p_pad:.1f} "
+    for p in wave_pts:
+        path_str += f"L {p['x']:.1f} {p['y']:.1f} "
+    path_str += f"L {wave_pts[-1]['x']:.1f} {h_height - p_pad:.1f} Z"
+    
+    line_str = f"M {wave_pts[0]['x']:.1f} {wave_pts[0]['y']:.1f} "
+    for p in wave_pts:
+        line_str += f"L {p['x']:.1f} {p['y']:.1f} "
+        
+    curr_price = stats.get("current_price", 100.0)
+    mean_val = stats["fcf_model"]["mean"]
+    p25_val = stats["fcf_model"]["p25"]
+    
+    min_bin = dist[0]["bin_start"]
+    max_bin = dist[-1]["bin_end"]
+    bin_range = max_bin - min_bin if max_bin - min_bin > 0 else 1
+    
+    def get_x_of_val(val):
+        pct = (val - min_bin) / bin_range
+        g_w = w_width - p_pad * 2
+        v_pct = min(1.0, max(0.0, pct))
+        return p_pad + v_pct * g_w
+        
+    cur_x = get_x_of_val(curr_price)
+    mean_x = get_x_of_val(mean_val)
+    p25_x = get_x_of_val(p25_val)
+    
+    dist_svg = f"""<svg width="220" height="110" viewBox="0 0 220 110" style="background:#070712; border:1px solid rgba(255,255,255,0.08); border-radius:12px;">
+  <defs>
+    <linearGradient id="distGrad_md" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#06b6d4" stop-opacity="0.4" />
+      <stop offset="100%" stop-color="#0891b2" stop-opacity="0.0" />
+    </linearGradient>
+  </defs>
+  <path d="{path_str}" fill="url(#distGrad_md)" />
+  <path d="{line_str}" fill="none" stroke="#06b6d4" stroke-width="2" />
+  <line x1="{p_pad}" y1="{h_height - p_pad}" x2="{w_width - p_pad}" y2="{h_height - p_pad}" stroke="rgba(255,255,255,0.2)" stroke-width="1" />
+  
+  <line x1="{cur_x:.1f}" y1="{p_pad}" x2="{cur_x:.1f}" y2="{h_height - p_pad}" stroke="#fbbf24" stroke-width="1.5" stroke-dasharray="2,2" />
+  <line x1="{mean_x:.1f}" y1="{p_pad}" x2="{mean_x:.1f}" y2="{h_height - p_pad}" stroke="#34d399" stroke-width="1.5" stroke-dasharray="2,2" />
+  <line x1="{p25_x:.1f}" y1="{p_pad}" x2="{p25_x:.1f}" y2="{h_height - p_pad}" stroke="#f87171" stroke-width="1.5" stroke-dasharray="2,2" />
+</svg>"""
+
+    visualizations_html = f"""<div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 20px; margin: 25px 0; background: rgba(255,255,255,0.01); border: 1px solid rgba(255,255,255,0.04); padding: 15px; border-radius: 16px;">
+  <div style="text-align: center;">
+    <h4 style="margin: 0 0 8px 0; color: #10b981; font-family: monospace; font-size: 11px; text-transform: uppercase; letter-spacing: 1px;">🎯 Fundamental Radar</h4>
+    {radar_svg}
+  </div>
+  <div style="text-align: center;">
+    <h4 style="margin: 0 0 8px 0; color: #06b6d4; font-family: monospace; font-size: 11px; text-transform: uppercase; letter-spacing: 1px;">📈 Monte Carlo Distribution</h4>
+    {dist_svg}
+    <div style="display: grid; grid-template-cols: repeat(3, 1sfr); gap: 5px; font-size: 8px; font-family: monospace; color: #94a3b8; margin-top: 6px;">
+      <div><span style="color: #f87171; font-weight: bold;">P25:</span> ${p25_val}</div>
+      <div><span style="color: #fbbf24; font-weight: bold;">現價:</span> ${curr_price}</div>
+      <div><span style="color: #34d399; font-weight: bold;">期望:</span> ${mean_val}</div>
+    </div>
+  </div>
+</div>"""
 
     report_date = datetime.now().strftime("%Y-%m-%d")
 
@@ -682,6 +838,8 @@ recommendation: {rating}
 ## 三、 雙軌蒙地卡羅隨機模擬估值 (Double-Track Monte Carlo Valuation)
 
 為避免傳統單一 DCF 模型因重資本開支（Deposition CapEx）或研發再投資（R&D Reinvestment）而扭曲價值，本系統特別對其進行了雙軌 10,000 次隨機估值推演。
+
+{visualizations_html}
 
 ### 📊 估值模型動態隨機變數假設 (Stochastic Model Assumptions)：
 本報告的蒙地卡羅模擬參數並非採用固定死板的硬編碼，而是**根據個股最新的實際市場風險波動度 (Beta) 與成長動能 (Historical Growth Rates) 進行動態智能估算**：
