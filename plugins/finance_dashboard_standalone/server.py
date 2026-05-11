@@ -34,7 +34,7 @@ logger = logging.getLogger("StandaloneFinanceDashboard")
 app = FastAPI(
     title="Unified Quant & Finance Standalone Terminal",
     description="Independent Financial Dashboard serving Moomoo, Charting, and AI Hedge Fund operations.",
-    version="1.0.0"
+    version="2.0.0"
 )
 
 # Enable CORS for local development freedom

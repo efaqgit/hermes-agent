@@ -653,6 +653,9 @@ function App() {
             <div>
               <h1 className="text-sm font-bold tracking-widest text-white uppercase font-mono flex items-center gap-2">
                 UNIFIED QUANT & FINANCE STANDALONE TERMINAL
+                <span className="ml-1.5 px-1.5 py-0.5 bg-cyan-500/15 text-cyan-400 border border-cyan-500/25 rounded text-[8px] font-bold tracking-normal uppercase shadow-[0_0_8px_rgba(6,182,212,0.15)] animate-pulse">
+                  v2.0
+                </span>
               </h1>
               <p className="text-[10px] text-slate-500 font-mono uppercase tracking-wider mt-0.5">
                 Dynamic Monte CarloDCF & Live Portfolio Workspace
