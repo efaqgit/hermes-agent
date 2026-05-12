@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>傷寒雜病論 - 數位辨證終端</title>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@400;700&family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=3.2">
 </head>
 <body>
     <div class="app-container">
@@ -17,7 +17,26 @@
         <main class="main-content">
             <!-- Left Column: Input -->
             <section class="panel input-panel">
-                <h2>症狀採集 <span class="badge" id="selected-count">0</span></h2>
+                <div class="panel-title-container">
+                    <h2>症狀採集 <span class="badge" id="selected-count">0</span></h2>
+                    <button class="clear-all-btn" id="btn-clear-all" disabled>清除重置</button>
+                </div>
+                
+                <div class="category-tabs" id="category-tabs">
+                    <!-- Dynamic category tabs will be injected here -->
+                </div>
+
+                <!-- AI Free-text Extraction Container -->
+                <div class="ai-free-text-section">
+                    <div class="section-title">💬 老中醫 AI 智能問診</div>
+                    <textarea id="ai-free-text" placeholder="輸入患者自由主訴... (例如: 昨晚淋雨後開始發燒、怕冷、沒流汗，脖子很僵硬，胃口還行，感覺呼吸有點氣喘)"></textarea>
+                    <button id="btn-ai-extract" class="btn-secondary">
+                        <span class="extract-btn-text">老中醫 AI 提取</span>
+                        <span class="extract-btn-loader"></span>
+                    </button>
+                    <div id="ai-extract-notes" class="ai-extract-notes" style="display: none;"></div>
+                </div>
+
                 <div class="search-box">
                     <input type="text" id="symptom-search" placeholder="搜尋症狀... (例如: 發熱, 汗出)">
                 </div>
@@ -60,6 +79,6 @@
     </div>
     
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <script src="app.js"></script>
+    <script src="app.js?v=3.2"></script>
 </body>
 </html>

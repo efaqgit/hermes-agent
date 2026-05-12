@@ -17,21 +17,32 @@ class ShanghanEngine:
                 continue
 
             score = 0.0
+            matched_must = []
+            matched_should = []
+            
             # 2. 必要症狀加權 (Must-have)
             for sym, weight in criteria.get('must_have', {}).items():
                 if sym in user_symptoms:
                     score += weight
+                    matched_must.append(sym)
 
             # 3. 輔助症狀加權 (Should-have)
             for sym, weight in criteria.get('should_have', {}).items():
                 if sym in user_symptoms:
                     score += weight
+                    matched_should.append(sym)
             
             if score > 0:
                 results.append({
                     "name": name,
                     "score": round(score, 2),
-                    "source": formula.get('source_clause', '')
+                    "source": formula.get('source_clause', ''),
+                    "category": formula.get('category', ''),
+                    "matched_must_have": matched_must,
+                    "total_must_have": len(criteria.get('must_have', {})),
+                    "matched_should_have": matched_should,
+                    "total_should_have": len(criteria.get('should_have', {})),
+                    "ingredients": formula.get('ingredients', [])
                 })
 
         return sorted(results, key=lambda x: x['score'], reverse=True)
