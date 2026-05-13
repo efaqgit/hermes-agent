@@ -45,7 +45,47 @@ class ShanghanEngine:
                     "ingredients": formula.get('ingredients', [])
                 })
 
-        return sorted(results, key=lambda x: x['score'], reverse=True)
+        # Sort initial results
+        sorted_initial_results = sorted(results, key=lambda x: x['score'], reverse=True)
+        
+        if not sorted_initial_results:
+            return {"locked_category": None, "formulas": []}
+            
+        # Phase 1: Score the Category (Meridian) using MAX score
+        category_scores = {}
+        for r in sorted_initial_results:
+            cat = r['category']
+            if cat:
+                if cat not in category_scores or r['score'] > category_scores[cat]:
+                    category_scores[cat] = r['score']
+                
+        if not category_scores:
+            return {"locked_category": "未分類", "formulas": sorted_initial_results}
+
+        # Sort categories by max score
+        sorted_cats = sorted(category_scores.items(), key=lambda x: x[1], reverse=True)
+        top_cat, top_score = sorted_cats[0]
+        
+        # Phase 2: Concurrent Syndromes (合病/併病容錯區間)
+        # Keep any category that is within 0.2 of the top_score
+        tolerance = 0.2
+        valid_categories = [cat for cat, score in sorted_cats if top_score - score <= tolerance]
+        
+        # Format the locked category string
+        if len(valid_categories) > 1:
+            # Shorten names for display (e.g. "傷寒論-太陽經" -> "太陽經")
+            short_cats = [c.replace("傷寒論-", "").replace("金匱要略-", "") for c in valid_categories]
+            locked_category = " / ".join(short_cats) + " (合病/併病)"
+        else:
+            locked_category = valid_categories[0]
+            
+        # Filter and keep only formulas from the valid categories
+        final_formulas = [r for r in sorted_initial_results if r['category'] in valid_categories]
+        
+        return {
+            "locked_category": locked_category,
+            "formulas": final_formulas
+        }
 
 # --- 測試執行區塊 ---
 if __name__ == "__main__":

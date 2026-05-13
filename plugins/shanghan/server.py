@@ -210,29 +210,34 @@ async def analyze_symptoms(req: AnalyzeRequest):
     if not symptoms:
         raise HTTPException(status_code=400, detail="No symptoms provided.")
         
-    results = engine.analyze(symptoms)
+    analysis_result = engine.analyze(symptoms)
+    locked_category = analysis_result.get("locked_category")
+    formulas = analysis_result.get("formulas", [])
     
     # 2. Get LLM synthesis using Hermes Auxiliary Client
     llm_analysis = ""
     try:
-        if results:
-            top_formulas = [f"{r['name']} (分數: {r['score']})" for r in results[:3]]
+        if formulas:
+            top_formulas = [f"{r['name']} (分數: {r['score']})" for r in formulas[:3]]
             
             zh_symptoms = [SYMPTOM_MAP.get(s, s) for s in symptoms]
             
             prompt = f"""請你扮演一位精通《傷寒雜病論》與《金匱要略》的經方派老中醫大師（如胡希恕、曹穎甫）。
 患者目前的主要症狀為：{', '.join(zh_symptoms)}。
 
+【系統經絡定位】：{locked_category}
+這代表系統底層的量化引擎已將病邪鎖定在上述經絡。
+
 根據量化引擎比對出來的前幾名方劑為：
 {chr(10).join(top_formulas)}
 
 請根據以上資料，用繁體中文給出一段專業、極具臨床指導價值且深入淺出的「大師醫案分析、病機探討、與處方加減化裁指南」。
-請特別注意以下「處方加減與變證法」的辨證施治思考：
-1. 若最吻合方劑為「桂枝湯」，但患者主訴有「氣喘/咳嗽」，應提示化裁為「桂枝加厚朴杏子湯」。
-2. 若最吻合方劑為「理中丸/理中湯」，但患者伴有「嘔吐/噁心」，應提示化裁為「理中加半夏生薑湯」。
-3. 若患者有明顯「血瘀（舌有瘀斑、少腹刺痛或肌膚甲錯）」，請特別分析病因病位：是下焦實熱蓄血（桃核承氣湯），還是虛勞乾血（大黃䗪蟲丸），並給予明確的攻補兼施方針。
-4. 結合歷史經典醫案（如胡希恕、曹穎甫醫案思考模型），分析其表裡寒熱，給出明確的服用禁忌與調護（如服桂枝湯後喝熱稀粥、避風寒等）。
-5. 必須新增一個獨立區塊「**《本經疏證》藥物精解**」：請嚴格根據清代鄒澍《本經疏證》的理論，解析推薦方劑中的核心藥物（如桂枝、麻黃、當歸等），提取書中的邏輯與經驗，深度說明該藥物為何能針對患者的現有症狀。
+請強制採用以下「六經辨證推導格式」來撰寫：
+1. 【辨病位與病性】：開宗明義宣告並解釋系統定位的經絡（例如：「本案經研判病位在**{locked_category}**，理由是...」），分析其表裡、寒熱、虛實。
+2. 【抓主症】：擷取出病人的哪幾個關鍵症狀，完美契合了推薦方劑的條文？
+3. 【方證對應】：為何此方最合適？
+4. 【處方加減與變證法】：結合歷史經典醫案（如胡希恕醫案思考模型），給出明確的服用禁忌與調護。
+5. **《本經疏證》藥物精解**：嚴格根據清代鄒澍《本經疏證》的理論，解析推薦方劑中的核心藥物，深度說明該藥物為何能針對患者現有症狀。
 
 不需要免責聲明，直接以老中醫大師的口吻進行系統性剖析。輸出格式請使用 Markdown，排版要精美、段落分明。
 """
@@ -257,7 +262,8 @@ async def analyze_symptoms(req: AnalyzeRequest):
     return {
         "success": True,
         "input_symptoms": symptoms,
-        "formulas": results,
+        "locked_category": locked_category,
+        "formulas": formulas,
         "llm_analysis": llm_analysis
     }
 
@@ -293,6 +299,7 @@ async def extract_symptoms(req: ExtractRequest):
 1. "extracted_keys" 中填寫的英文 Key 必須與提供標準清單中完全一致！如果主訴中沒有對應標準症狀，不要隨意放入。
 2. 對於「虛實、寒熱」等關鍵點（例如：腹痛喜按或拒按、口渴喜冷飲或熱飲）若未提及，必須在 "missing_questions" 中提出追問。
 3. 【極度重要】不要忽視雜病與皮膚專科症狀！只要主訴中出現「濕疹」、「脂肪瘤」、「膽結石」、「失眠」、「乾癬」等病名，請務必精準提取對應的 Key (例如: eczema, lipoma, gallstones)，絕對不可遺漏！
+4. 經絡循行與穴位精確度：若主訴提到特定穴位（如：丘墟穴屬足少陽膽經、足三里屬陽明）或特定解剖位置（如：身體外側/外翻屬少陽、後側屬太陽），請在 "logic_hints" 中精準判斷歸屬經絡（例如本案為足少陽經），切勿張冠李戴。
 """
         response = call_llm(
             task="curator",

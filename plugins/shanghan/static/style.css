@@ -72,6 +72,17 @@ body {
     text-transform: uppercase;
 }
 
+.version-badge {
+    background: rgba(13, 148, 136, 0.1);
+    color: var(--primary-color);
+    border: 1px solid rgba(13, 148, 136, 0.2);
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    font-family: var(--font-sans);
+}
+
 .main-content {
     display: grid;
     grid-template-columns: 380px 1fr; /* Slightly wider left column for tabs */
@@ -244,6 +255,26 @@ body {
 .status-indicator.active {
     color: var(--primary-color);
     background: rgba(107, 142, 35, 0.1);
+}
+
+.locked-meridian-badge {
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(13, 148, 136, 0.2));
+    border: 1px solid rgba(13, 148, 136, 0.3);
+    color: var(--primary-color);
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    box-shadow: 0 2px 8px rgba(13, 148, 136, 0.1);
+}
+
+.locked-meridian-badge::before {
+    content: '📍 定位:';
+    font-size: 0.8rem;
+    opacity: 0.8;
 }
 
 .formula-results {

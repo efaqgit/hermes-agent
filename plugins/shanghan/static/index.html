@@ -10,7 +10,10 @@
 <body>
     <div class="app-container">
         <header class="app-header">
-            <h1><span class="logo-icon">🌿</span> 傷寒雜病論 <span>數位辨證終端</span></h1>
+            <div style="position: relative; display: flex; justify-content: center; align-items: center;">
+                <h1><span class="logo-icon">🌿</span> 傷寒雜病論 <span>數位辨證終端</span></h1>
+                <span class="version-badge" style="position: absolute; right: 0; bottom: 8px;">v3.1</span>
+            </div>
             <p class="subtitle">Quantitative TCM Diagnostic Engine based on Shanghan Lun</p>
         </header>
         
@@ -70,7 +73,10 @@
             <section class="panel output-panel">
                 <div class="results-header">
                     <h2>辨證決策矩陣</h2>
-                    <div class="status-indicator" id="engine-status">等待輸入</div>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <div id="locked-meridian-badge" class="locked-meridian-badge" style="display: none;"></div>
+                        <div class="status-indicator" id="engine-status">等待輸入</div>
+                    </div>
                 </div>
                 
                 <div class="results-content">

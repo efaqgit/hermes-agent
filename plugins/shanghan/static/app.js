@@ -318,6 +318,7 @@ document.addEventListener("DOMContentLoaded", () => {
         
         formulaResults.innerHTML = `<div class="empty-state">引擎正在比對《傷寒雜病論》資料庫...</div>`;
         aiAnalysisContent.innerHTML = `<div class="empty-state">AI 老中醫正在研讀醫案...</div>`;
+        document.getElementById("locked-meridian-badge").style.display = "none";
 
         try {
             const response = await fetch("/api/analyze", {
@@ -328,6 +329,14 @@ document.addEventListener("DOMContentLoaded", () => {
             const data = await response.json();
             
             if (data.success) {
+                const badge = document.getElementById("locked-meridian-badge");
+                if (data.locked_category && data.locked_category !== "未分類") {
+                    badge.textContent = data.locked_category;
+                    badge.style.display = "flex";
+                } else {
+                    badge.style.display = "none";
+                }
+                
                 renderResults(data.formulas);
                 typewriterEffect(aiAnalysisContent, data.llm_analysis);
                 engineStatus.textContent = "辨證完成";
