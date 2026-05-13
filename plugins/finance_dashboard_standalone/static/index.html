@@ -42,6 +42,11 @@
   <style>
     body {
       font-family: 'Outfit', sans-serif;
+      background-color: #030307;
+      background-image: 
+        radial-gradient(circle at 80% 10%, rgba(6, 182, 212, 0.12) 0%, transparent 40%),
+        radial-gradient(circle at 20% 80%, rgba(139, 92, 246, 0.08) 0%, transparent 40%);
+      background-attachment: fixed;
     }
     .font-mono {
       font-family: 'JetBrains Mono', monospace;
@@ -55,11 +60,74 @@
       background: rgba(0, 0, 0, 0.2);
     }
     ::-webkit-scrollbar-thumb {
-      background: rgba(16, 185, 129, 0.2);
+      background: rgba(6, 182, 212, 0.2);
       border-radius: 3px;
     }
     ::-webkit-scrollbar-thumb:hover {
-      background: rgba(16, 185, 129, 0.4);
+      background: rgba(6, 182, 212, 0.55);
+      box-shadow: 0 0 10px rgba(6, 182, 212, 0.4);
+    }
+    
+    /* Elegant Laser Scan & Neon animations */
+    @keyframes laserSweep {
+      0% { left: -100%; }
+      100% { left: 150%; }
+    }
+    .laser-btn {
+      position: relative;
+      overflow: hidden;
+    }
+    .laser-btn::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      height: 100%;
+      width: 60px;
+      background: linear-gradient(
+        to right,
+        rgba(255, 255, 255, 0) 0%,
+        rgba(255, 255, 255, 0.75) 50%,
+        rgba(255, 255, 255, 0) 100%
+      );
+      transform: skewX(-25deg);
+      left: -100%;
+      pointer-events: none;
+      transition: none;
+    }
+    .laser-btn:hover::after {
+      animation: laserSweep 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+    }
+    
+    /* Frosted Panels and Glassmorphism */
+    .frosted-panel {
+      background: rgba(10, 11, 20, 0.55);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+    .frosted-panel:hover {
+      border-color: rgba(6, 182, 212, 0.22);
+      box-shadow: 0 15px 35px -5px rgba(0, 0, 0, 0.5), 0 0 20px rgba(6, 182, 212, 0.08);
+      transform: translateY(-2px);
+    }
+    
+    /* Ripple & Typing Animations */
+    @keyframes pulseRipple {
+      0% { transform: scale(0.95); opacity: 0.8; }
+      50% { transform: scale(1.1); opacity: 0.3; }
+      100% { transform: scale(1.3); opacity: 0; }
+    }
+    .ripple-ring {
+      animation: pulseRipple 2s cubic-bezier(0.2, 0.8, 0.2, 1) infinite;
+    }
+    
+    @keyframes glowBreathe {
+      0%, 100% { box-shadow: 0 0 15px rgba(6, 182, 212, 0.15); border-color: rgba(6, 182, 212, 0.25); }
+      50% { box-shadow: 0 0 25px rgba(6, 182, 212, 0.35); border-color: rgba(6, 182, 212, 0.5); }
+    }
+    .glow-breathe-cyan {
+      animation: glowBreathe 3s ease-in-out infinite;
     }
   </style>
 </head>

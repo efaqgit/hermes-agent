@@ -175,14 +175,46 @@ async def get_moomoo_orders():
 WATCHLIST_FILE = os.path.join(os.path.expanduser("~"), ".hermes", "finance_watchlist.json")
 
 def _load_watchlist() -> list:
+    tickers = []
     if os.path.exists(WATCHLIST_FILE):
         try:
             with open(WATCHLIST_FILE, "r") as f:
-                return json.load(f)
+                raw_list = json.load(f)
+                if isinstance(raw_list, list):
+                    tickers = raw_list
         except Exception:
             pass
-    # Default watchlist
-    return ["AMAT", "MSTR", "NVDA", "TSLA"]
+    if not tickers:
+        tickers = ["AMAT", "MSTR", "NVDA", "TSLA"]
+        
+    import re
+    def to_half_width(s: str) -> str:
+        out = []
+        for c in s:
+            code = ord(c)
+            if code == 0x3000:
+                out.append(" ")
+            elif 0xFF01 <= code <= 0xFF5E:
+                out.append(chr(code - 0xfee0))
+            else:
+                out.append(c)
+        return "".join(out)
+        
+    sanitized = []
+    seen = set()
+    for t in tickers:
+        if not isinstance(t, str):
+            continue
+        cleaned = to_half_width(t).strip().upper()
+        # Remove any character that is not standard uppercase alphanumeric, a dot, or a hyphen
+        cleaned = re.sub(r"[^A-Z0-9.-]", "", cleaned)
+        if cleaned and len(cleaned) <= 10 and cleaned not in seen:
+            sanitized.append(cleaned)
+            seen.add(cleaned)
+            
+    if not sanitized:
+        sanitized = ["AMAT", "MSTR", "NVDA", "TSLA"]
+    return sanitized
 
 def _save_watchlist(tickers: list):
     os.makedirs(os.path.dirname(WATCHLIST_FILE), exist_ok=True)
@@ -231,14 +263,29 @@ async def get_watchlist():
 @app.post("/api/watchlist")
 async def add_to_watchlist(ticker: str):
     """Add a ticker to the watchlist."""
+    import re
+    def to_half_width(s: str) -> str:
+        out = []
+        for c in s:
+            code = ord(c)
+            if code == 0x3000:
+                out.append(" ")
+            elif 0xFF01 <= code <= 0xFF5E:
+                out.append(chr(code - 0xfee0))
+            else:
+                out.append(c)
+        return "".join(out)
+        
+    cleaned = to_half_width(ticker).strip().upper()
+    cleaned = re.sub(r"[^A-Z0-9.-]", "", cleaned)
+    if not cleaned or len(cleaned) > 10:
+        raise HTTPException(status_code=400, detail="Invalid ticker format")
+        
     tickers = _load_watchlist()
-    ticker = ticker.upper().strip()
-    if not ticker:
-        raise HTTPException(status_code=400, detail="Invalid ticker")
-    if ticker not in tickers:
-        tickers.append(ticker)
+    if cleaned not in tickers:
+        tickers.append(cleaned)
         _save_watchlist(tickers)
-    return {"success": True, "message": f"Added {ticker} to watchlist", "data": tickers}
+    return {"success": True, "message": f"Added {cleaned} to watchlist", "data": tickers}
 
 @app.delete("/api/watchlist")
 async def delete_from_watchlist(ticker: str):
@@ -270,7 +317,7 @@ async def run_analysis(req: AnalysisRequest):
 OBSIDIAN_DIR = "/Users/kennethlin/Github/@obsidian/finance"
 
 def _translate_news_titles(news_list: list) -> list:
-    """Batch-translates headlines to Taiwan Chinese (Traditional) using auxiliary LLM."""
+    """Batch-translates headlines to Taiwan Chinese (Traditional) and analyzes sentiment using auxiliary LLM."""
     if not news_list:
         return news_list
         
@@ -278,10 +325,22 @@ def _translate_news_titles(news_list: list) -> list:
     if not titles:
         return news_list
         
-    prompt = f"""You are an elite financial translator. Translate the following English stock news headlines into natural, professional Taiwan Chinese (繁體中文).
+    prompt = f"""You are an elite financial translator and stock sentiment analyst. 
+Translate the following English stock news headlines into natural, professional Taiwan Chinese (繁體中文).
+Additionally, perform sentiment analysis on each headline and provide a brief 1-sentence Taiwanese explanation (under 15 words) of why you chose that sentiment.
+
 Always use proper local Taiwanese terminology (e.g., use '晶片' for chips, '特斯拉' for Tesla, '輝達' for NVIDIA, '台積電' for TSMC, '營收' for revenue, '半導體' for semiconductors, etc.).
 
-Return ONLY a raw JSON array of translated strings in the exact same order. Do NOT wrap in markdown code blocks like ```json. Do NOT include any explanations or conversational preambles.
+Return ONLY a raw JSON array of objects in the exact same order. Do NOT wrap in markdown code blocks like ```json. Do NOT include any explanations or conversational preambles.
+
+Response JSON Schema:
+[
+  {{
+    "title_translated": "Translated Title (Traditional Chinese)",
+    "sentiment": "BULLISH" | "BEARISH" | "NEUTRAL",
+    "reason": "1-sentence Taiwanese reason (under 15 characters, e.g. '獲利預期上升', '負債比過高')"
+  }}
+]
 
 Input headlines:
 {json.dumps(titles, ensure_ascii=False, indent=2)}
@@ -291,7 +350,7 @@ Input headlines:
         response = call_llm(
             task="translation",
             messages=[
-                {"role": "system", "content": "You are a professional financial translator specialized in Taiwan Chinese."},
+                {"role": "system", "content": "You are a professional financial translator and sentiment analyst specialized in Taiwan Chinese. You only output raw valid JSON arrays matching the requested schema."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.1
@@ -303,22 +362,24 @@ Input headlines:
         ans_cleaned = re.sub(r"```[a-zA-Z]*", "", ans).strip()
         ans_cleaned = ans_cleaned.strip("`").strip()
         
-        translated_titles = json.loads(ans_cleaned)
-        if isinstance(translated_titles, list) and len(translated_titles) == len(titles):
-            title_map = dict(zip(titles, translated_titles))
-            for item in news_list:
-                t = item.get("title")
-                if t in title_map:
-                    item["title_translated"] = str(title_map[t])
-                else:
-                    item["title_translated"] = t
+        parsed_results = json.loads(ans_cleaned)
+        if isinstance(parsed_results, list) and len(parsed_results) == len(titles):
+            for idx, item in enumerate(news_list):
+                res = parsed_results[idx]
+                item["title_translated"] = str(res.get("title_translated") or item.get("title"))
+                item["sentiment"] = str(res.get("sentiment") or "NEUTRAL")
+                item["reason"] = str(res.get("reason") or "中性輿情")
         else:
             for item in news_list:
                 item["title_translated"] = item.get("title", "")
+                item["sentiment"] = "NEUTRAL"
+                item["reason"] = "翻譯解析異常"
     except Exception as e:
-        logger.error(f"Failed to batch translate news: {e}")
+        logger.error(f"Failed to batch translate and analyze news: {e}")
         for item in news_list:
             item["title_translated"] = item.get("title", "")
+            item["sentiment"] = "NEUTRAL"
+            item["reason"] = "系統連線異常"
             
     return news_list
 
@@ -334,11 +395,50 @@ def _run_monte_carlo(ticker: str) -> dict:
     shares_outstanding = int(info.get("sharesOutstanding") or 10000000)
     total_cash = float(info.get("totalCash") or 0.0)
     total_debt = float(info.get("totalDebt") or 0.0)
-    net_debt = total_debt - total_cash
     
     # Base amounts (fallback to net income if FCF is negative or missing)
     fcf_base = float(info.get("freeCashflow") or info.get("operatingCashflow") or 0.0)
     earnings_base = float(info.get("netIncomeToCommon") or info.get("netIncome") or 0.0)
+    
+    # Currency normalization check to solve foreign ADRs currency mismatch (e.g., TSM)
+    financial_currency = info.get("financialCurrency")
+    trading_currency = info.get("currency") or "USD"
+    fx_rate = 1.0
+    if financial_currency and trading_currency and financial_currency.upper() != trading_currency.upper():
+        fc = financial_currency.upper()
+        tc = trading_currency.upper()
+        try:
+            rate_t = yf.Ticker(f"{fc}{tc}=X")
+            rate_val = rate_t.info.get("previousClose") or rate_t.info.get("regularMarketPrice")
+            if rate_val:
+                fx_rate = float(rate_val)
+            else:
+                rate_t2 = yf.Ticker(f"{tc}{fc}=X")
+                rate_val2 = rate_t2.info.get("previousClose") or rate_t2.info.get("regularMarketPrice")
+                if rate_val2:
+                    fx_rate = 1.0 / float(rate_val2)
+        except Exception:
+            # Common hardcoded fallback rates if yfinance exchange rates fail
+            fallbacks = {
+                ("TWD", "USD"): 1.0 / 31.5,
+                ("HKD", "USD"): 1.0 / 7.8,
+                ("CNY", "USD"): 1.0 / 7.2,
+                ("EUR", "USD"): 1.09,
+                ("JPY", "USD"): 1.0 / 150.0,
+                ("GBP", "USD"): 1.25,
+            }
+            fx_rate = fallbacks.get((fc, tc)) or fallbacks.get((tc, fc), 1.0)
+            if (tc, fc) in fallbacks:
+                fx_rate = 1.0 / fx_rate
+                
+    if fx_rate != 1.0:
+        total_cash *= fx_rate
+        total_debt *= fx_rate
+        fcf_base *= fx_rate
+        earnings_base *= fx_rate
+        logger.info(f"Normalized {ticker} financial values from {financial_currency} to {trading_currency} using fx_rate={fx_rate:.6f}")
+        
+    net_debt = total_debt - total_cash
     
     if fcf_base <= 0 and earnings_base > 0:
         fcf_base = earnings_base * 0.6
@@ -356,13 +456,34 @@ def _run_monte_carlo(ticker: str) -> dict:
     if beta is None or beta <= 0:
         beta = 1.0
     
+    # Industry-aware WACC adjustment
+    sector = info.get("sector") or ""
+    industry = info.get("industry") or ""
+    is_reit_or_utility = sector in ["Real Estate", "Utilities"] or "REIT" in industry
+    is_financial = sector in ["Financial Services", "Financial"]
+    
     # Risk-free rate (4.2%) + Beta * Equity Risk Premium (5.0%)
-    wacc_mean = 0.042 + (beta * 0.05)
-    debt_equity = info.get("debtToEquity")
-    if debt_equity:
-        # High leverage increases required return rate (WACC risk)
-        wacc_mean += min(0.02, (debt_equity / 100.0) * 0.005)
-    wacc_mean = min(max(wacc_mean, 0.065), 0.125)
+    cost_of_equity = 0.042 + (beta * 0.05)
+    
+    if is_reit_or_utility:
+        # High leverage in REITs/Utilities lowers WACC due to cheaper secured debt financing (often 50%+ of capital structure)
+        # We assume a standard target weight of 50% equity and 50% debt, with standard cost of debt around 5.5%
+        wacc_mean = (0.5 * cost_of_equity) + (0.5 * 0.055)
+        wacc_mean = min(max(wacc_mean, 0.055), 0.09)
+        logger.info(f"Industry-aware cost of capital (REIT/Utility) for {ticker}: WACC estimated at {wacc_mean*100:.2f}% (no standard corporate leverage penalty applied)")
+    elif is_financial:
+        # Financial institutions rely heavily on cheap liability/deposit leverage
+        wacc_mean = (0.6 * cost_of_equity) + (0.4 * 0.045)
+        wacc_mean = min(max(wacc_mean, 0.06), 0.10)
+        logger.info(f"Industry-aware cost of capital (Financial) for {ticker}: WACC estimated at {wacc_mean*100:.2f}% (no standard corporate leverage penalty applied)")
+    else:
+        # Standard corporate calculation
+        wacc_mean = cost_of_equity
+        debt_equity = info.get("debtToEquity")
+        if debt_equity:
+            # High leverage increases standard corporate WACC risk
+            wacc_mean += min(0.02, (debt_equity / 100.0) * 0.005)
+        wacc_mean = min(max(wacc_mean, 0.065), 0.125)
 
     rev_growth = info.get("revenueGrowth")
     earn_growth = info.get("earningsGrowth")
@@ -446,12 +567,14 @@ def _run_monte_carlo(ticker: str) -> dict:
         df = t.insider_transactions
         if df is not None and not df.empty:
             for _, row in df.head(6).iterrows():
+                shares_raw = float(row.get("Shares") or 0.0)
+                value_raw = float(row.get("Value") or 0.0)
                 insider_data.append({
                     "insider": str(row.get("Insider") or "N/A"),
                     "position": str(row.get("Position") or "N/A"),
                     "transaction": str(row.get("Transaction") or "N/A"),
-                    "shares": int(row.get("Shares") or 0),
-                    "value": float(row.get("Value") or 0.0),
+                    "shares": 0 if np.isnan(shares_raw) else int(shares_raw),
+                    "value": 0.0 if np.isnan(value_raw) else float(value_raw),
                     "date": str(row.get("Start Date") or "N/A")
                 })
     except Exception as e:
@@ -568,6 +691,69 @@ def _run_monte_carlo(ticker: str) -> dict:
         }
     }
 
+def _generate_ai_highlights(stats: dict) -> str:
+    """Generates AI Financial & Earnings Analysis section using auxiliary LLM in Taiwan Chinese."""
+    ticker = stats["ticker"]
+    roe_pct = f"{stats['roe'] * 100:.2f}%" if stats["roe"] is not None else "N/A"
+    margin_pct = f"{stats['profit_margin'] * 100:.2f}%" if stats["profit_margin"] is not None else "N/A"
+    debt_eq_val = f"{stats['debt_equity']:.2f}%" if stats["debt_equity"] is not None else "N/A"
+    
+    context = f"""
+Ticker: {ticker}
+Current Price: ${stats['current_price']:.2f}
+FCF Model Mean: ${stats['fcf_model']['mean']}
+Earnings Model Mean: ${stats['earnings_model']['mean']}
+ROE: {roe_pct}
+Profit Margin: {margin_pct}
+Debt/Equity: {debt_eq_val}
+Net Debt: ${stats['net_debt']/1e6:.1f}M
+Estimated WACC: {stats.get('est_wacc', 0.085)*100:.2f}%
+Estimated Stage 1 Growth (1-5y): {stats.get('est_growth_g1', 0.10)*100:.2f}%
+Beta: {stats.get('beta', 1.0):.2f}
+"""
+
+    prompt = f"""You are a senior hedge fund portfolio manager and financial analyst.
+Analyze the following financial stats for {ticker} and write a highly professional, deep-dive Financial & Earnings Highlights report in Taiwan Chinese (繁體中文).
+
+The report MUST contain two clear subsections formatted exactly in markdown:
+### 🌟 3 大營運亮點 (3 Key Operational Highlights)
+Provide 3 bullet points. Each point should reference the specific financial data from the context (e.g. ROE, Profit Margin, cash flow, debt levels) and explain why it represents a competitive advantage or positive signal. Keep it concrete, analytical, and professional (avoid generic platitudes).
+
+### ⚠️ 3 大潛在風險 (3 Key Potential Risks)
+Provide 3 bullet points. Each point should reference specific vulnerabilities from the context (e.g. leverage/debt, cash burn/negative FCF, growth slowdown, valuation multiples, high volatility Beta) and explain the potential threat to stock value.
+
+Always use proper local Taiwanese terminology (繁體中文), e.g., use '股東權益報酬率' for ROE, '淨利率' for Profit Margin, '負債權益比' for Debt/Equity, '自由現金流' for FCF, '波動度/風險係數' for Beta, '折現' for discount, etc.
+
+Company financial context:
+{context}
+
+Return ONLY the markdown block. Do NOT include any conversational preamble or markdown code blocks like ```markdown. Just start directly with the markdown headers.
+"""
+
+    try:
+        from agent.auxiliary_client import call_llm, extract_content_or_reasoning
+        response = call_llm(
+            task="analysis",
+            messages=[
+                {"role": "system", "content": "You are an elite hedge fund analyst writing professional investment reports in Taiwan Chinese. You only output raw markdown summaries without conversational fluff."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3
+        )
+        ans = extract_content_or_reasoning(response)
+        return ans.strip()
+    except Exception as e:
+        logger.error(f"Failed to generate AI financial highlights: {e}")
+        return """### 🌟 3 大營運亮點 (3 Key Operational Highlights)
+* **營運基礎穩定**：雖然目前數據面臨挑戰，但公司仍維持一定的市場定位與流動性。
+* **資產負債結構調整中**：在當前的資本環境中，公司正致力於優化資源配置以提升效率。
+* **研發/再投資潛能**：持續關注其未來產品/技術的長線發展動能。
+
+### ⚠️ 3 大潛在風險 (3 Key Potential Risks)
+* **市場波動與系統性風險**：Beta 波動特徵可能放大市場大盤拉回時的跌幅。
+* **資本開支與現金流消耗**：重資本或虧損階段企業需警惕高昂的資本支出對流動性的壓迫。
+* **總體經濟與資金成本壓力**：WACC 反映當前高利率與市場風險溢價，可能壓低貼現估值空間。"""
+
 def _generate_markdown_report(stats: dict) -> str:
     from datetime import datetime
     import math
@@ -610,7 +796,7 @@ def _generate_markdown_report(stats: dict) -> str:
     beta_ratio = stats.get("beta") if stats.get("beta") is not None else 1.0
     momentum_val = min(100.0, max(15.0, 100.0 - abs(1.0 - beta_ratio) * 40.0))
     
-    cx, cy, r_limit = 110.0, 110.0, 70.0
+    cx, cy, r_limit = 160.0, 125.0, 70.0
     angles = [
         -math.pi / 2,
         -math.pi / 2 + (2 * math.pi / 5),
@@ -660,7 +846,7 @@ def _generate_markdown_report(stats: dict) -> str:
             text_anchor = "end"
         labels_markup += f'  <text x="{outer["x"]:.1f}" y="{outer["y"]+4:.1f}" fill="rgba(255,255,255,0.85)" font-size="9" font-family="monospace" font-weight="bold" text-anchor="{text_anchor}">{labels[i]}({int(values[i])})</text>\n'
         
-    radar_svg = f"""<svg width="220" height="220" viewBox="0 0 220 220" style="background:#070712; border:1px solid rgba(255,255,255,0.08); border-radius:12px;">
+    radar_svg = f"""<svg width="320" height="250" viewBox="0 0 320 250" style="background:#070712; border:1px solid rgba(255,255,255,0.08); border-radius:12px;">
   <defs>
     <radialGradient id="radarGlow_md" cx="50%" cy="50%" r="50%">
       <stop offset="0%" stop-color="#10b981" stop-opacity="0.4" />
@@ -679,7 +865,7 @@ def _generate_markdown_report(stats: dict) -> str:
     counts = [d["count"] for d in dist]
     max_count = max(counts) if counts else 1
     
-    w_width, h_height, p_pad = 220, 110, 15
+    w_width, h_height, p_pad = 300, 150, 15
     
     def scale_y(count):
         g_h = h_height - p_pad * 2
@@ -718,16 +904,22 @@ def _generate_markdown_report(stats: dict) -> str:
     mean_x = get_x_of_val(mean_val)
     p25_x = get_x_of_val(p25_val)
     
-    dist_svg = f"""<svg width="220" height="110" viewBox="0 0 220 110" style="background:#070712; border:1px solid rgba(255,255,255,0.08); border-radius:12px;">
+    dist_svg = f"""<svg width="300" height="150" viewBox="0 0 300 150" style="background:#070712; border:1px solid rgba(255,255,255,0.08); border-radius:12px;">
   <defs>
     <linearGradient id="distGrad_md" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="#06b6d4" stop-opacity="0.4" />
       <stop offset="100%" stop-color="#0891b2" stop-opacity="0.0" />
     </linearGradient>
+    <linearGradient id="colorBarGrad_md" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#f87171" stop-opacity="0.85" />
+      <stop offset="50%" stop-color="#fbbf24" stop-opacity="0.85" />
+      <stop offset="100%" stop-color="#34d399" stop-opacity="0.85" />
+    </linearGradient>
   </defs>
   <path d="{path_str}" fill="url(#distGrad_md)" />
   <path d="{line_str}" fill="none" stroke="#06b6d4" stroke-width="2" />
-  <line x1="{p_pad}" y1="{h_height - p_pad}" x2="{w_width - p_pad}" y2="{h_height - p_pad}" stroke="rgba(255,255,255,0.2)" stroke-width="1" />
+  
+  <rect x="{p_pad}" y="{h_height - p_pad - 1.5}" width="{w_width - p_pad * 2}" height="3" rx="1.5" fill="url(#colorBarGrad_md)" />
   
   <line x1="{cur_x:.1f}" y1="{p_pad}" x2="{cur_x:.1f}" y2="{h_height - p_pad}" stroke="#fbbf24" stroke-width="1.5" stroke-dasharray="2,2" />
   <line x1="{mean_x:.1f}" y1="{p_pad}" x2="{mean_x:.1f}" y2="{h_height - p_pad}" stroke="#34d399" stroke-width="1.5" stroke-dasharray="2,2" />
@@ -776,9 +968,34 @@ def _generate_markdown_report(stats: dict) -> str:
     # Section VI: News Summary List
     news_list = ""
     if stats.get("news_summary"):
+        # Calculate sentiment distribution
+        bullish_count = sum(1 for n in stats.get("news_summary", []) if n.get("sentiment") == "BULLISH")
+        bearish_count = sum(1 for n in stats.get("news_summary", []) if n.get("sentiment") == "BEARISH")
+        neutral_count = sum(1 for n in stats.get("news_summary", []) if n.get("sentiment") == "NEUTRAL")
+        total_news = len(stats.get("news_summary", [])) or 1
+        
+        bull_pct = (bullish_count / total_news) * 100
+        bear_pct = (bearish_count / total_news) * 100
+        neu_pct = (neutral_count / total_news) * 100
+        
+        distribution_html = f"""<div style="display: flex; height: 8px; border-radius: 4px; overflow: hidden; margin: 12px 0 16px 0; background: #1a1a2e;">
+  <div style="width: {bull_pct}%; background: #10b981;" title="多頭 (Bullish)"></div>
+  <div style="width: {neu_pct}%; background: #64748b;" title="中性 (Neutral)"></div>
+  <div style="width: {bear_pct}%; background: #ef4444;" title="空頭 (Bearish)"></div>
+</div>
+<div style="display: flex; justify-content: space-between; font-size: 10px; font-family: monospace; color: #94a3b8; margin-bottom: 20px;">
+  <span style="color: #10b981; font-weight: bold;">🟢 多頭: {bullish_count} 筆 ({bull_pct:.1f}%)</span>
+  <span style="color: #94a3b8; font-weight: bold;">⚪ 中性: {neutral_count} 筆 ({neu_pct:.1f}%)</span>
+  <span style="color: #ef4444; font-weight: bold;">🔴 空頭: {bearish_count} 筆 ({bear_pct:.1f}%)</span>
+</div>""".replace("\n", " ")
+        
+        news_list += distribution_html + "\n\n"
+        
         for n in stats["news_summary"]:
             translated = n.get("title_translated") or n.get("title", "")
             original = n.get("title", "")
+            sentiment = n.get("sentiment", "NEUTRAL").upper()
+            reason = n.get("reason", "中性輿情")
             
             if translated and translated != original:
                 display_text = f"**{translated}** ( *{original}* )"
@@ -787,9 +1004,21 @@ def _generate_markdown_report(stats: dict) -> str:
                 
             title_link = f"[{display_text}]({n['link']})" if n['link'] else display_text
             pub_info = f"*{n['publisher']}* ({n['date']})" if n['publisher'] else f"({n['date']})"
-            news_list += f"* 📰 {title_link} — {pub_info}\n"
+            
+            # Formulate sentiment tag
+            if sentiment == "BULLISH":
+                tag = '<span style="color:#10b981; font-weight:bold; background:rgba(16,185,129,0.1); padding:2px 6px; border-radius:4px; border:1px solid rgba(16,185,129,0.2); font-size:9px; margin-right:6px;">📈 多頭 BULLISH</span>'
+            elif sentiment == "BEARISH":
+                tag = '<span style="color:#ef4444; font-weight:bold; background:rgba(239,68,68,0.1); padding:2px 6px; border-radius:4px; border:1px solid rgba(239,68,68,0.2); font-size:9px; margin-right:6px;">📉 空頭 BEARISH</span>'
+            else:
+                tag = '<span style="color:#94a3b8; font-weight:bold; background:rgba(148,163,184,0.1); padding:2px 6px; border-radius:4px; border:1px solid rgba(148,163,184,0.2); font-size:9px; margin-right:6px;">⚪ 中性 NEUTRAL</span>'
+                
+            news_list += f"* 📰 {tag} {title_link} — {pub_info}\n  > 💡 **AI 輿情解析**: *{reason}*\n\n"
     else:
         news_list = "* 暫無最新市場新聞報導。"
+
+    # Call LLM to generate AI analysis report section
+    ai_analysis_section = _generate_ai_highlights(stats)
 
     md = f"""---
 ticker: {ticker}
@@ -834,7 +1063,13 @@ recommendation: {rating}
 
 ---
 
-## 二、 財務健康狀況審計 (Fundamental Financial Health Audit)
+## 二、 🤖 AI 財報亮點與風險剖析 (AI Financial Highlights & Risks)
+
+{ai_analysis_section}
+
+---
+
+## 三、 財務健康狀況審計 (Fundamental Financial Health Audit)
 
 根據最新的市場基礎數據，{ticker} 的財務指標摘要如下：
 
@@ -852,9 +1087,9 @@ recommendation: {rating}
 
 ---
 
-## 三、 雙軌蒙地卡羅隨機模擬估值 (Double-Track Monte Carlo Valuation)
+## 四、 雙軌蒙地卡羅隨機模擬估值 (Double-Track Monte Carlo Valuation)
 
-為避免傳統單一 DCF 模型因重資本開支（Deposition CapEx）或研發再投資（R&D Reinvestment）而扭曲價值，本系統特別對其進行了雙軌 10,000 次隨機估值推演。
+為避免傳統單一 DCF 模型因重資本開支（Deposition CapEx） or 研發再投資（R&D Reinvestment）而扭曲價值，本系統特別對其進行了雙軌 10,000 次隨機估值推演。
 
 ### 📊 估值模型動態隨機變數假設 (Stochastic Model Assumptions)：
 本報告的蒙地卡羅模擬參數並非採用固定死板的硬編碼，而是**根據個股最新的實際市場風險波動度 (Beta) 與成長動能 (Historical Growth Rates) 進行動態智能估算**：
@@ -882,7 +1117,7 @@ recommendation: {rating}
 
 ---
 
-## 四、 最新 SEC 重要申報檔案 (Latest SEC Filings)
+## 五、 最新 SEC 重要申報檔案 (Latest SEC Filings)
 
 以下是近期該公司向美國證券交易委員會 (SEC) 申報的最新 6 筆檔案明細：
 
@@ -891,7 +1126,7 @@ recommendation: {rating}
 {sec_rows}
 ---
 
-## 五、 最新內部人交易紀錄 (Insider Transactions)
+## 六、 最新內部人交易紀錄 (Insider Transactions)
 
 以下是近期公司內部大股東、董事與高階經理人 (Insiders) 的持股交易與變動明細：
 
@@ -900,9 +1135,9 @@ recommendation: {rating}
 {insider_rows}
 ---
 
-## 六、 最新新聞動態與輿情摘要 (Latest News & Media Coverage)
+## 七、 最新新聞動態與輿情分析 (Latest News & Sentiment Analysis)
 
-以下是該股在各大財經媒體與市場所關注的最新重要動向與評論：
+以下是該股在各大財經媒體與市場所關注的最新重要動向與多空輿情：
 
 {news_list}
 """
@@ -987,7 +1222,10 @@ async def get_chart_html(
     ticker: str = Query(..., description="The ticker symbol, e.g. TSLA, NVDA"),
     period: str = "1y",
     interval: str = "1d",
-    indicators: str = "ma,macd,rsi,bb,vol"
+    indicators: str = "ma,macd,rsi,bb,vol",
+    backtest_strategy: str = Query(None),
+    backtest_fast: float = Query(None),
+    backtest_slow: float = Query(None)
 ):
     """Generates an interactive HTML Technical chart using Lightweight Charts."""
     try:
@@ -1143,6 +1381,35 @@ async def get_chart_html(
         rsi_data = [{"time": ts(df.index[i]), "value": round(float(rsi[i]), 2)}
                     for i in range(len(df)) if not np.isnan(rsi[i])]
 
+    markers = []
+    if backtest_strategy:
+        bt_res = _run_backtest(df, backtest_strategy, backtest_fast, backtest_slow)
+        # map dates to timestamps
+        date_to_ts = {df.index[i].strftime("%Y-%m-%d"): ts(df.index[i]) for i in range(len(df))}
+        for trade in bt_res.get("trades", []):
+            b_date = trade.get("buy_date")
+            s_date = trade.get("sell_date")
+            b_px = trade.get("buy_price")
+            s_px = trade.get("sell_price")
+            
+            if b_date in date_to_ts:
+                markers.append({
+                    "time": date_to_ts[b_date],
+                    "position": "belowBar",
+                    "color": "#10b981",
+                    "shape": "arrowUp",
+                    "text": f"買入 ${b_px:.2f}"
+                })
+            if s_date in date_to_ts:
+                markers.append({
+                    "time": date_to_ts[s_date],
+                    "position": "aboveBar",
+                    "color": "#ef4444",
+                    "shape": "arrowDown",
+                    "text": f"賣出 ${s_px:.2f}"
+                })
+        markers.sort(key=lambda x: x["time"])
+
     display_ticker = ticker.replace("US.", "").replace("HK.", "") if "." in ticker else ticker
     last_price = float(df["Close"].iloc[-1])
     change_pct = (df["Close"].iloc[-1] / df["Close"].iloc[-2] - 1) * 100 if len(df) >= 2 else 0
@@ -1209,6 +1476,7 @@ const D = {{
   sig: {json.dumps(signal_data)},
   hist: {json.dumps(hist_data)},
   rsi: {json.dumps(rsi_data)},
+  markers: {json.dumps(markers)},
 }};
 
 const base = {{
@@ -1238,6 +1506,9 @@ if (mc) {{
     wickUpColor:'#EF5350', wickDownColor:'#26A69A',
   }});
   cs.setData(D.candle);
+  if (D.markers && D.markers.length) {{
+    cs.setMarkers(D.markers);
+  }}
   if (D.ma20.length) {{ const s=mc.addLineSeries({{color:'#2196F3',lineWidth:1,priceLineVisible:false,lastValueVisible:false}}); s.setData(D.ma20); }}
   if (D.ma81.length) {{ const s=mc.addLineSeries({{color:'#FF9800',lineWidth:1.5,priceLineVisible:false,lastValueVisible:false}}); s.setData(D.ma81); }}
   if (D.bbU.length) {{
@@ -1406,6 +1677,29 @@ def _run_backtest(df, strategy_name, param_fast, param_slow, initial_capital=100
                 signals.append(1)  # Buy breakthrough
             elif prev_close >= prev_ma and curr_close < curr_ma:
                 signals.append(-1) # Sell breakthrough
+            else:
+                signals.append(0)
+    elif strategy_name == "MACD_Strategy":
+        fast_period = int(param_fast or 12)
+        slow_period = int(param_slow or 26)
+        signal_period = 9
+        
+        ema_fast = df["Close"].ewm(span=fast_period, adjust=False).mean().values
+        ema_slow = df["Close"].ewm(span=slow_period, adjust=False).mean().values
+        macd_line = ema_fast - ema_slow
+        signal_line = pd.Series(macd_line).ewm(span=signal_period, adjust=False).mean().values
+        
+        for i in range(len(df)):
+            if i < max(fast_period, slow_period):
+                signals.append(0)
+                continue
+            prev_macd, prev_sig = macd_line[i-1], signal_line[i-1]
+            curr_macd, curr_sig = macd_line[i], signal_line[i]
+            
+            if prev_macd <= prev_sig and curr_macd > curr_sig:
+                signals.append(1)  # Golden Cross
+            elif prev_macd >= prev_sig and curr_macd < curr_sig:
+                signals.append(-1)  # Death Cross
             else:
                 signals.append(0)
     else:

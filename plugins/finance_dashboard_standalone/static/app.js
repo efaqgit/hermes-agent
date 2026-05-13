@@ -299,9 +299,13 @@ function App() {
 
   // Markdown renderer
   function renderMarkdown(md) {
-    if (!md) return "";
+    if (!md) return { __html: "" };
     try {
-      return { __html: marked.parse(md) };
+      // Strip ONLY the backend-generated SVG visualization container (contains <svg tags)
+      // to avoid duplication with the interactive React chart cards.
+      // Preserve other inline HTML like the sentiment color bar and news distribution labels.
+      const cleanedMd = md.replace(/<div style="display:\s*flex;[^>]*?flex-wrap[^>]*?>[\s\S]*?<\/svg>[\s\S]*?<\/div>\s*<\/div>\s*<\/div>/gi, "");
+      return { __html: marked.parse(cleanedMd) };
     } catch (e) {
       return { __html: `<p class="text-rose-400">Failed to render report: ${e.message}</p>` };
     }
@@ -327,8 +331,8 @@ function App() {
     const betaRatio = stats.beta || 1.0;
     const momentumVal = Math.min(100, Math.max(15, 100 - Math.abs(1 - betaRatio) * 40));
 
-    const cx = 110;
-    const cy = 110;
+    const cx = 160;
+    const cy = 125;
     const r = 70;
     
     const angles = [
@@ -355,7 +359,7 @@ function App() {
     const pointsStr = points.map(p => `${p.x},${p.y}`).join(" ");
 
     return (
-      <svg className="w-[180px] h-[180px]" viewBox="0 0 220 220">
+      <svg className="w-full max-w-[320px] h-[250px]" viewBox="0 0 320 250">
         <defs>
           <radialGradient id="radarGlow" cx="50%" cy="50%" r="50%">
             <stop offset="0%" stopColor="#10b981" stopOpacity="0.4" />
@@ -428,7 +432,7 @@ function App() {
               fontWeight="bold"
               textAnchor={textAnchor}
             >
-              {labels[i]}
+              {labels[i]} ({Math.round(values[i])})
             </text>
           );
         })}
@@ -443,8 +447,8 @@ function App() {
     const counts = dist.map(d => d.count);
     const maxCount = Math.max(...counts, 1);
     
-    const width = 220;
-    const height = 110;
+    const width = 300;
+    const height = 150;
     const padding = 15;
     
     const scaleY = (count) => {
@@ -493,24 +497,30 @@ function App() {
 
     return (
       <div className="flex flex-col items-center w-full">
-        <svg className="w-[180px] h-[110px]" viewBox="0 0 220 110">
+        <svg className="w-full max-w-[300px] h-[150px]" viewBox="0 0 300 150">
           <defs>
             <linearGradient id="distGrad" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor="#06b6d4" stopOpacity="0.4" />
               <stop offset="100%" stopColor="#0891b2" stopOpacity="0.0" />
+            </linearGradient>
+            <linearGradient id="colorBarGrad" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stopColor="#f87171" stopOpacity="0.85" />
+              <stop offset="50%" stopColor="#fbbf24" stopOpacity="0.85" />
+              <stop offset="100%" stopColor="#34d399" stopOpacity="0.85" />
             </linearGradient>
           </defs>
 
           <path d={pathStr} fill="url(#distGrad)" />
           <path d={lineStr} fill="none" stroke="#06b6d4" strokeWidth="2" />
           
-          <line 
-            x1={padding} 
-            y1={height - padding} 
-            x2={width - padding} 
-            y2={height - padding} 
-            stroke="rgba(255,255,255,0.15)" 
-            strokeWidth="1" 
+          {/* Gorgeous Glowing Color Spectrum Bar */}
+          <rect 
+            x={padding} 
+            y={height - padding - 1.5} 
+            width={width - padding * 2} 
+            height={3} 
+            rx={1.5}
+            fill="url(#colorBarGrad)"
           />
 
           {/* Current Price Line */}
@@ -654,7 +664,7 @@ function App() {
               <h1 className="text-sm font-bold tracking-widest text-white uppercase font-mono flex items-center gap-2">
                 UNIFIED QUANT & FINANCE STANDALONE TERMINAL
                 <span className="ml-1.5 px-1.5 py-0.5 bg-cyan-500/15 text-cyan-400 border border-cyan-500/25 rounded text-[8px] font-bold tracking-normal uppercase shadow-[0_0_8px_rgba(6,182,212,0.15)] animate-pulse">
-                  v2.0
+                  v2.1
                 </span>
               </h1>
               <p className="text-[10px] text-slate-500 font-mono uppercase tracking-wider mt-0.5">
@@ -702,7 +712,7 @@ function App() {
         <div className="xl:col-span-3 flex flex-col gap-6">
           {/* Account Metrics Summary */}
           {accountInfo && (
-            <div className="bg-[#0b0b14]/40 border border-white/[0.05] rounded-2xl p-5 backdrop-blur-md flex flex-col gap-4">
+            <div className="frosted-panel rounded-2xl p-5 flex flex-col gap-4">
               <div className="flex justify-between items-center border-b border-white/[0.04] pb-2">
                 <span className="text-[10px] text-slate-400 font-mono uppercase tracking-widest">Total Valuation</span>
                 <span className="text-[10px] bg-emerald-400/10 text-emerald-400 px-1.5 py-0.5 rounded font-mono">SIM</span>
@@ -729,7 +739,7 @@ function App() {
           )}
 
           {/* Moomoo Positions list */}
-          <div className="border border-white/[0.05] bg-[#0b0b14]/20 backdrop-blur-md rounded-2xl overflow-hidden shadow-xl">
+          <div className="frosted-panel rounded-2xl overflow-hidden shadow-xl">
             <div className="px-5 py-4 border-b border-white/[0.05] flex justify-between items-center bg-white/[0.01]">
               <div>
                 <h3 className="text-xs font-extrabold text-emerald-400 uppercase tracking-widest font-mono">Portfolio Holdings</h3>
@@ -782,7 +792,7 @@ function App() {
           </div>
 
           {/* WATCHLIST MANAGER */}
-          <div className="border border-white/[0.05] bg-[#0b0b14]/20 backdrop-blur-md rounded-2xl overflow-hidden shadow-xl flex flex-col">
+          <div className="frosted-panel rounded-2xl overflow-hidden shadow-xl flex flex-col">
             <div className="px-5 py-4 border-b border-white/[0.05] flex justify-between items-center bg-white/[0.01]">
               <div>
                 <h3 className="text-xs font-extrabold text-emerald-400 uppercase tracking-widest font-mono">Realtime Watchlist</h3>
@@ -870,7 +880,7 @@ function App() {
         {/* ─── COLUMN 2: TECHNICAL CHARTS & TRANSACTION BOOK (CENTER) ─── */}
         <div className="xl:col-span-5 flex flex-col gap-6">
           {/* Live Chart Header Controls */}
-          <div className="bg-[#0b0b14]/30 border border-white/[0.05] rounded-2xl p-4 flex flex-col gap-3.5 backdrop-blur-md shadow-lg">
+          <div className="frosted-panel rounded-2xl p-4 flex flex-col gap-3.5 shadow-lg">
             {/* Top row: Active Ticker & Period Buttons */}
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-white/[0.03] pb-3">
               <div className="flex items-center gap-3">
@@ -948,15 +958,15 @@ function App() {
           {/* Lightweight Candlestick Chart frame */}
           <div className="border border-white/[0.05] bg-[#07070a] rounded-2xl overflow-hidden shadow-2xl">
             <iframe 
-              key={`${activeChartTicker}_${selectedPeriod}_${selectedInterval}_${selectedIndicators}`}
-              src={`/api/chart?ticker=${activeChartTicker}&period=${selectedPeriod}&interval=${selectedInterval}&indicators=${selectedIndicators}`}
+              key={`${activeChartTicker}_${selectedPeriod}_${selectedInterval}_${selectedIndicators}_${backtestResult ? `${selectedStrategy}_${paramFast}_${paramSlow}_${backtestPeriod}` : ''}`}
+              src={`/api/chart?ticker=${activeChartTicker}&period=${selectedPeriod}&interval=${selectedInterval}&indicators=${selectedIndicators}${backtestResult ? `&backtest_strategy=${selectedStrategy}&backtest_fast=${paramFast}&backtest_slow=${paramSlow}` : ''}`}
               className="w-full h-[480px] border-0"
               title="Interactive Candlestick Board"
             />
           </div>
 
           {/* 🏃 Vectorized Quant Backtesting Workspace */}
-          <div className="border border-white/[0.05] bg-[#0b0b14]/30 backdrop-blur-md rounded-2xl overflow-hidden shadow-2xl flex flex-col p-5 gap-4">
+          <div className="frosted-panel rounded-2xl overflow-hidden shadow-2xl flex flex-col p-5 gap-4">
             <div className="flex justify-between items-center border-b border-white/[0.04] pb-3">
               <div className="flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></div>
@@ -976,6 +986,7 @@ function App() {
                   onChange={(e) => {
                     const strat = e.target.value;
                     setSelectedStrategy(strat);
+                    setBacktestResult(null); // Clear previous results when strategy changes
                     if (strat === "MA_Breakthrough") {
                       setParamFast(81);
                       setParamSlow(0);
@@ -988,12 +999,16 @@ function App() {
                     } else if (strat === "Bollinger_Strategy") {
                       setParamFast(20);
                       setParamSlow(2.0);
+                    } else if (strat === "MACD_Strategy") {
+                      setParamFast(12);
+                      setParamSlow(26);
                     }
                   }}
                   className="bg-black/40 border border-white/[0.08] rounded-lg px-2.5 py-2 text-slate-300 focus:outline-none focus:border-cyan-500 cursor-pointer"
                 >
                   <option value="SMA_Crossover">均線黃金交叉</option>
                   <option value="MA_Breakthrough">均線突破策略</option>
+                  <option value="MACD_Strategy">MACD 趨勢交叉</option>
                   <option value="RSI_Strategy">RSI 超買超賣</option>
                   <option value="Bollinger_Strategy">布林通道反彈</option>
                 </select>
@@ -1001,7 +1016,7 @@ function App() {
 
               <div className="flex flex-col gap-1.5">
                 <label className="text-[9px] text-slate-400 uppercase">
-                  {selectedStrategy === "SMA_Crossover" ? "Fast SMA" : selectedStrategy === "RSI_Strategy" ? "RSI Low" : selectedStrategy === "MA_Breakthrough" ? "MA Window (天數)" : "BB Period"}
+                  {selectedStrategy === "SMA_Crossover" ? "Fast SMA" : selectedStrategy === "RSI_Strategy" ? "RSI Low" : selectedStrategy === "MA_Breakthrough" ? "MA Window (天數)" : selectedStrategy === "MACD_Strategy" ? "Fast EMA" : "BB Period"}
                 </label>
                 <input
                   type="number"
@@ -1013,7 +1028,7 @@ function App() {
 
               <div className="flex flex-col gap-1.5">
                 <label className="text-[9px] text-slate-400 uppercase">
-                  {selectedStrategy === "SMA_Crossover" ? "Slow SMA" : selectedStrategy === "RSI_Strategy" ? "RSI High" : selectedStrategy === "MA_Breakthrough" ? "未啟用" : "BB Dev"}
+                  {selectedStrategy === "SMA_Crossover" ? "Slow SMA" : selectedStrategy === "RSI_Strategy" ? "RSI High" : selectedStrategy === "MA_Breakthrough" ? "未啟用" : selectedStrategy === "MACD_Strategy" ? "Slow EMA" : "BB Dev"}
                 </label>
                 <input
                   type="number"
@@ -1045,7 +1060,7 @@ function App() {
               className={`w-full py-2.5 rounded-xl text-xs font-mono font-bold tracking-wider uppercase transition-all border ${
                 backtesting 
                   ? "bg-amber-500/10 border-amber-500/25 text-amber-500 animate-pulse" 
-                  : "bg-cyan-500 text-black hover:bg-cyan-400 border-transparent shadow-lg shadow-cyan-500/10 cursor-pointer"
+                  : "bg-cyan-500 text-black hover:bg-cyan-400 border-transparent shadow-lg shadow-cyan-500/10 cursor-pointer laser-btn"
               }`}
             >
               {backtesting ? "⚙️ Simulating Trades..." : "🏃 Run Backtest Simulation"}
@@ -1100,7 +1115,7 @@ function App() {
           </div>
 
           {/* Orders log book */}
-          <div className="border border-white/[0.05] bg-[#0b0b14]/20 backdrop-blur-md rounded-2xl overflow-hidden shadow-xl flex flex-col">
+          <div className="frosted-panel rounded-2xl overflow-hidden shadow-xl flex flex-col">
             <div className="px-5 py-3 border-b border-white/[0.05] flex justify-between items-center">
               <h3 className="text-xs font-extrabold text-emerald-400 uppercase tracking-widest font-mono">Daily Order Log Book</h3>
               <span className="text-[9px] text-slate-500 font-mono">TODAY</span>
@@ -1130,7 +1145,7 @@ function App() {
 
         {/* ─── COLUMN 3: MONTE CARLO STOCHASTIC DCF VALUATION (RIGHT) ─── */}
         <div className="xl:col-span-4 flex flex-col gap-6">
-          <div className="border border-white/[0.05] bg-[#0b0b14]/20 backdrop-blur-md rounded-2xl shadow-2xl overflow-hidden flex flex-col min-h-[720px]">
+          <div className="frosted-panel rounded-2xl shadow-2xl overflow-hidden flex flex-col min-h-[720px]">
             
             {/* Header Conclave Control */}
             <div className="px-5 py-4 border-b border-white/[0.05] bg-white/[0.01] flex flex-col gap-3">
@@ -1152,7 +1167,7 @@ function App() {
                   className={`flex-1 py-2.5 rounded-xl text-xs font-mono font-bold tracking-wider uppercase transition-all border ${
                     valuating 
                       ? "bg-amber-500/10 border-amber-500/25 text-amber-500 animate-pulse" 
-                      : "bg-emerald-500 text-black hover:bg-emerald-400 border-transparent shadow-lg shadow-emerald-500/10 cursor-pointer"
+                      : "bg-emerald-500 text-black hover:bg-emerald-400 border-transparent shadow-lg shadow-emerald-500/10 cursor-pointer laser-btn"
                   }`}
                 >
                   {valuating ? "⚙️ Calculating DCF Trails..." : "🏛️ Run Stochastic Audit"}
@@ -1191,50 +1206,102 @@ function App() {
                 <div className="flex flex-col gap-6">
                   {/* Render Visualizations if activeStats exists */}
                   {activeStats && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6 border-b border-white/[0.04] pb-6">
+                    <div className="grid grid-cols-1 gap-5 mb-6 border-b border-white/[0.04] pb-6">
                       {/* PEG Valuation Rating Card */}
                       {activeStats.peg_ratio !== undefined && activeStats.peg_ratio !== null && (
-                        <div className="col-span-1 md:col-span-2 bg-[#0b0b14]/40 border border-white/[0.05] rounded-xl p-4 flex items-center justify-between shadow-md backdrop-blur-md">
-                          <div className="flex flex-col gap-0.5">
-                            <span className="text-[10px] text-slate-400 font-mono uppercase tracking-wider font-bold">
-                              市盈成長比 (PEG Ratio) 智能評級
-                            </span>
-                            <span className="text-xs text-white font-mono font-medium mt-1">
-                              PEG 值：<span className="font-bold text-base text-cyan-400">{Number(activeStats.peg_ratio).toFixed(2)}</span>
-                            </span>
+                        <div className="w-full bg-[#0b0b14]/40 border border-white/[0.05] rounded-xl p-5 flex flex-col gap-4 shadow-md backdrop-blur-md">
+                          <div className="flex items-center justify-between w-full">
+                            <div className="flex flex-col gap-0.5">
+                              <span className="text-[10px] text-slate-400 font-mono uppercase tracking-wider font-bold">
+                                市盈成長比 (PEG Ratio) 智能評級
+                              </span>
+                              <span className="text-xs text-white font-mono font-medium mt-1">
+                                PEG 值：<span className="font-bold text-base text-cyan-400">{Number(activeStats.peg_ratio).toFixed(2)}</span>
+                              </span>
+                            </div>
+                            
+                            {/* Badge based on value */}
+                            {(() => {
+                              const peg = Number(activeStats.peg_ratio);
+                              if (peg <= 0) {
+                                return (
+                                  <span className="px-3 py-1.5 bg-rose-500/10 text-rose-400 border border-rose-500/20 rounded-full text-[10px] font-bold font-mono uppercase animate-pulse">
+                                    ⚠️ Negative Growth (低防禦)
+                                  </span>
+                                );
+                              } else if (peg < 1.0) {
+                                return (
+                                  <span className="px-3 py-1.5 bg-emerald-500/15 text-emerald-400 border border-emerald-500/25 rounded-full text-[10px] font-bold font-mono uppercase tracking-wide shadow-[0_0_12px_rgba(16,185,129,0.15)] animate-pulse">
+                                    💎 Undervalued (極佳安全邊際)
+                                  </span>
+                                );
+                              } else if (peg <= 1.5) {
+                                return (
+                                  <span className="px-3 py-1.5 bg-amber-500/15 text-amber-400 border border-amber-500/25 rounded-full text-[10px] font-bold font-mono uppercase tracking-wide">
+                                    ⚖️ Fair Value (估值合理)
+                                  </span>
+                                );
+                              } else {
+                                return (
+                                  <span className="px-3 py-1.5 bg-rose-500/15 text-rose-400 border border-rose-500/25 rounded-full text-[10px] font-bold font-mono uppercase tracking-wide">
+                                    🚨 Overpriced (成長溢價過高)
+                                  </span>
+                                );
+                              }
+                            })()}
                           </div>
-                          
-                          {/* Badge based on value */}
-                          {(() => {
-                            const peg = Number(activeStats.peg_ratio);
-                            if (peg <= 0) {
-                              return (
-                                <span className="px-3 py-1.5 bg-rose-500/10 text-rose-400 border border-rose-500/20 rounded-full text-[10px] font-bold font-mono uppercase animate-pulse">
-                                  ⚠️ Negative Growth (低防禦)
-                                </span>
-                              );
-                            } else if (peg < 1.0) {
-                              return (
-                                <span className="px-3 py-1.5 bg-emerald-500/15 text-emerald-400 border border-emerald-500/25 rounded-full text-[10px] font-bold font-mono uppercase tracking-wide shadow-[0_0_12px_rgba(16,185,129,0.15)] animate-pulse">
-                                  💎 Undervalued (極佳安全邊際)
-                                </span>
-                              );
-                            } else if (peg <= 1.5) {
-                              return (
-                                <span className="px-3 py-1.5 bg-amber-500/15 text-amber-400 border border-amber-500/25 rounded-full text-[10px] font-bold font-mono uppercase tracking-wide">
-                                  ⚖️ Fair Value (估值合理)
-                                </span>
-                              );
-                            } else {
-                              return (
-                                <span className="px-3 py-1.5 bg-rose-500/15 text-rose-400 border border-rose-500/25 rounded-full text-[10px] font-bold font-mono uppercase tracking-wide">
-                                  🚨 Overpriced (成長溢價過高)
-                                </span>
-                              );
-                            }
-                          })()}
+
+                          {/* Beautiful Interactive Color Spectrum Bar */}
+                          <div className="w-full flex flex-col gap-1.5">
+                            <div className="relative w-full h-2 bg-white/[0.04] rounded-full overflow-hidden flex border border-white/[0.04]">
+                              <div className="h-full bg-emerald-500/80" style={{ width: "50%" }}></div>
+                              <div className="h-full bg-amber-500/80" style={{ width: "25%" }}></div>
+                              <div className="h-full bg-rose-500/80" style={{ width: "25%" }}></div>
+                              
+                              {/* Glowing current value pin overlay */}
+                              {(() => {
+                                const peg = Number(activeStats.peg_ratio);
+                                // Map 0.0 to 0%, 2.0 to 100%
+                                const percentage = Math.min(100, Math.max(0, (peg / 2.0) * 100));
+                                return (
+                                  <div 
+                                    className="absolute top-0 bottom-0 w-1.5 bg-white shadow-[0_0_10px_rgba(255,255,255,1)] rounded-full border border-black/50 transition-all duration-700"
+                                    style={{ left: `calc(${percentage}% - 3px)` }}
+                                  />
+                                );
+                              })()}
+                            </div>
+                            
+                            <div className="flex justify-between text-[8px] font-mono text-slate-500 uppercase tracking-wider font-bold">
+                              <span>便宜估值 (0.0)</span>
+                              <span>合理中樞 (1.0)</span>
+                              <span>成長溢價 (1.5+)</span>
+                            </div>
+                          </div>
                         </div>
                       )}
+
+                      {/* Radar Chart Panel */}
+                      <div className="frosted-panel rounded-xl p-5 flex flex-col items-center">
+                        <span className="text-[10px] text-cyan-400 font-mono uppercase tracking-wider mb-4 w-full text-left font-bold flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
+                          🎯 Fundamental Radar
+                        </span>
+                        <div className="flex justify-center items-center w-full min-h-[240px]">
+                          {renderRadarSVG(activeStats)}
+                        </div>
+                      </div>
+
+                      {/* Distribution Histogram Panel */}
+                      <div className="frosted-panel rounded-xl p-5 flex flex-col items-center">
+                        <span className="text-[10px] text-cyan-400 font-mono uppercase tracking-wider mb-4 w-full text-left font-bold flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
+                          📈 Monte Carlo FCF Probabilities
+                        </span>
+                        <div className="flex justify-center items-center w-full min-h-[240px] pt-4">
+                          {renderDistributionSVG(activeStats)}
+                        </div>
+                      </div>
                     </div>
                   )}
 
@@ -1279,16 +1346,22 @@ function App() {
       </main>
 
       {/* ─────────────────── SLIDING AI COPILOT DRAWER (RIGHT) ─────────────────── */}
-      <div className={`fixed top-0 right-0 h-full w-[450px] bg-[#070714]/95 backdrop-blur-xl border-l border-white/[0.08] shadow-2xl z-50 flex flex-col transform transition-transform duration-300 ease-in-out ${
+      <div className={`fixed top-0 right-0 h-full w-[460px] bg-slate-950/70 backdrop-blur-3xl border-l border-white/[0.06] shadow-[0_0_50px_rgba(0,0,0,0.85)] z-50 flex flex-col transform transition-transform duration-300 ease-in-out ${
         copilotOpen ? "translate-x-0" : "translate-x-full"
       }`}>
         {/* Drawer Header */}
-        <div className="p-5 border-b border-white/[0.06] flex items-center justify-between bg-black/20">
-          <div className="flex items-center gap-2.5">
-            <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></div>
+        <div className="p-5 border-b border-white/[0.06] flex items-center justify-between bg-black/30">
+          <div className="flex items-center gap-3">
+            <div className="relative w-3.5 h-3.5 flex items-center justify-center">
+              <div className="absolute w-2.5 h-2.5 rounded-full bg-cyan-500 ripple-ring"></div>
+              <div className="absolute w-1.5 h-1.5 rounded-full bg-cyan-400"></div>
+            </div>
             <div>
-              <h3 className="text-sm font-black text-white font-mono tracking-wider uppercase">Wall Street Copilot Conclave</h3>
-              <p className="text-[9px] text-slate-500 font-mono tracking-wider uppercase mt-0.5">Quant Helper • {activeChartTicker}</p>
+              <h3 className="text-xs font-black text-white font-mono tracking-wider uppercase flex items-center gap-1.5">
+                <span>Wall Street Copilot Conclave</span>
+                <span className="text-[8px] bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 px-1.5 py-0.5 rounded">Pro AI</span>
+              </h3>
+              <p className="text-[9px] text-slate-500 font-mono tracking-wider uppercase mt-0.5">Quant Strategy Engine • {activeChartTicker}</p>
             </div>
           </div>
           <button 
@@ -1302,18 +1375,18 @@ function App() {
         </div>
 
         {/* Chat Transcript Panel */}
-        <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-4 font-mono text-xs">
+        <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-5 font-mono text-xs scrollbar">
           {chatHistory.length === 0 ? (
-            <div className="flex-1 flex flex-col items-center justify-center text-center text-slate-500 py-20 gap-4">
-              <div className="p-3 bg-emerald-500/5 rounded-2xl border border-emerald-500/10">
-                <svg className="w-8 h-8 text-emerald-500/60" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            <div className="flex-1 flex flex-col items-center justify-center text-center text-slate-500 py-10 px-4 gap-4">
+              <div className="relative p-4 bg-cyan-500/5 rounded-3xl border border-cyan-500/10 glow-breathe-cyan">
+                <svg className="w-10 h-10 text-cyan-400/80 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 21l3.582-1.791A9.863 9.863 0 0112 20c4.418 0 8-3.582 8-8s-3.582-8-8-8-8 3.582-8 8c0 1.426.376 2.766 1.033 3.931L3 21l4.813-1.096c1.165.657 2.505 1.033 3.931 1.033 4.418 0 8-3.582 8-8s-3.582-8-8-8-8 3.582-8 8z" />
                 </svg>
               </div>
               <div>
-                <p className="font-extrabold text-slate-400 uppercase tracking-wider">Quant AI Assistant Idle</p>
-                <p className="text-[9px] text-slate-600 mt-1 max-w-[280px] leading-relaxed">
-                  請在此向 AI 助理諮詢關於 {activeChartTicker} 的量化策略、財務評估或估值處方。
+                <p className="font-extrabold text-slate-300 tracking-widest uppercase text-xs font-mono">Holographic Conclave Idle</p>
+                <p className="text-[10px] text-slate-500 mt-2 max-w-[280px] leading-relaxed">
+                  系統已就緒。點擊下方快捷策略卡片，或直接輸入關於 {activeChartTicker} 的量化回測與估值提問。
                 </p>
               </div>
             </div>
@@ -1321,12 +1394,24 @@ function App() {
             chatHistory.map((msg, i) => {
               const isUser = msg.role === "user";
               return (
-                <div key={i} className={`flex flex-col ${isUser ? "items-end" : "items-start"} max-w-[90%] ${isUser ? "self-end" : "self-start"}`}>
-                  <span className="text-[8px] text-slate-500 uppercase tracking-wider mb-1 px-1">{isUser ? "You" : "WallStreet AI"}</span>
-                  <div className={`p-4 rounded-2xl border leading-relaxed text-[11px] font-sans ${
+                <div key={i} className={`flex flex-col ${isUser ? "items-end" : "items-start"} max-w-[92%] ${isUser ? "self-end" : "self-start"}`}>
+                  <span className="text-[8px] text-slate-500 uppercase tracking-wider mb-1.5 px-1 font-sans flex items-center gap-1">
+                    {isUser ? (
+                      <React.Fragment>
+                        <span>You</span>
+                        <span className="w-1 h-1 rounded-full bg-slate-600"></span>
+                      </React.Fragment>
+                    ) : (
+                      <React.Fragment>
+                        <span className="text-cyan-400">🤖 Wall Street Copilot</span>
+                        <span className="w-1 h-1 rounded-full bg-cyan-400"></span>
+                      </React.Fragment>
+                    )}
+                  </span>
+                  <div className={`p-4 rounded-2xl border leading-relaxed text-xs font-sans shadow-lg transition-all ${
                     isUser 
-                      ? "bg-emerald-500/5 border-emerald-500/15 text-slate-200 rounded-tr-none" 
-                      : "bg-[#0b0b1a]/60 border-white/[0.04] text-slate-300 rounded-tl-none prose prose-invert prose-emerald max-w-none text-xs"
+                      ? "bg-cyan-500/10 border-cyan-500/20 text-slate-200 rounded-tr-none hover:shadow-[0_0_15px_rgba(6,182,212,0.1)]" 
+                      : "bg-[#0a0b14]/85 backdrop-blur-md border-white/[0.05] text-slate-300 rounded-tl-none hover:border-cyan-500/20 prose prose-invert prose-emerald max-w-none text-xs"
                   }`}>
                     {isUser ? (
                       msg.content
@@ -1339,28 +1424,51 @@ function App() {
             })
           )}
           {chatLoading && (
-            <div className="flex items-center gap-2 self-start bg-[#0b0b1a]/40 border border-white/[0.03] p-3 rounded-2xl rounded-tl-none">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-bounce" style={{ animationDelay: "0ms" }}></span>
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-bounce" style={{ animationDelay: "150ms" }}></span>
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-bounce" style={{ animationDelay: "300ms" }}></span>
+            <div className="flex items-center gap-2 self-start bg-[#0a0b14]/65 border border-white/[0.04] px-4 py-3 rounded-2xl rounded-tl-none shadow-md">
+              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-bounce" style={{ animationDelay: "0ms" }}></span>
+              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-bounce" style={{ animationDelay: "150ms" }}></span>
+              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-bounce" style={{ animationDelay: "300ms" }}></span>
             </div>
           )}
         </div>
 
+        {/* Quick Prompts Horizontal Bar */}
+        <div className="px-4 py-2 border-t border-white/[0.04] bg-black/10">
+          <p className="text-[8px] text-slate-500 font-mono uppercase tracking-widest mb-1.5 px-1">一鍵智能策略諮詢</p>
+          <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none flex-nowrap" style={{ WebkitOverflowScrolling: 'touch' }}>
+            {[
+              { label: "💡 財務健康度", prompt: `請幫我詳細分析 ${activeChartTicker} 的財務健康狀況與核心指標特徵。` },
+              { label: "📈 K線回測推薦", prompt: `為 ${activeChartTicker} 推薦最佳的技術指標組合與交易回測策略。` },
+              { label: "🔍 蒙地卡羅估值", prompt: `請解讀 ${activeChartTicker} 剛完成的蒙地卡羅估值分佈，目前股價是否合理？` },
+              { label: "📰 輿情多空診斷", prompt: `分析 ${activeChartTicker} 近期最重要的媒體新聞情緒與多空輿情解析。` }
+            ].map((qp, idx) => (
+              <button
+                key={idx}
+                onClick={() => {
+                  setChatInput(qp.prompt);
+                }}
+                className="bg-white/[0.02] hover:bg-white/[0.06] border border-white/[0.04] hover:border-cyan-500/30 text-slate-300 font-sans cursor-pointer whitespace-nowrap px-3 py-1.5 rounded-full text-[10px] transition-all shrink-0 hover:text-cyan-400 hover:scale-105 active:scale-95"
+              >
+                {qp.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* Chat Input Panel */}
-        <div className="p-4 border-t border-white/[0.06] bg-black/20 flex gap-2">
+        <div className="p-4 border-t border-white/[0.06] bg-black/30 flex gap-2">
           <input 
             type="text"
             value={chatInput}
             onChange={(e) => setChatInput(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") sendChatMessage(); }}
             placeholder={`Ask about ${activeChartTicker} or quant metrics...`}
-            className="flex-1 bg-black/40 border border-white/[0.08] focus:border-emerald-500/50 rounded-xl px-4 py-2.5 text-xs text-slate-300 focus:outline-none transition-all font-sans"
+            className="flex-1 bg-black/40 border border-white/[0.08] focus:border-cyan-500/50 rounded-xl px-4 py-3 text-xs text-slate-200 focus:outline-none transition-all font-sans placeholder-slate-600 focus:bg-black/60 focus:shadow-[0_0_15px_rgba(6,182,212,0.1)]"
           />
           <button 
             onClick={sendChatMessage}
             disabled={chatLoading || !chatInput.trim()}
-            className="px-4 py-2.5 bg-emerald-500 hover:bg-emerald-400 disabled:bg-emerald-500/20 disabled:text-slate-500 text-black font-bold text-xs rounded-xl transition-all cursor-pointer"
+            className="px-4 py-3 bg-cyan-500 hover:bg-cyan-400 disabled:bg-cyan-500/20 disabled:text-slate-500 text-black font-extrabold text-xs rounded-xl transition-all cursor-pointer laser-btn shadow-lg shadow-cyan-500/10"
           >
             Send
           </button>
