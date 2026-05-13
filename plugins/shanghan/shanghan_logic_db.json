@@ -641,6 +641,89 @@
           "text": "陽明病，發熱，汗出者，此為熱越，不能發黃也。但頭汗出，身無汗，劑頸而還，小便不利，渴飲水漿者，此被瘀熱在裡，身必發黃，茵陳蒿湯主之。"
         }
       ]
+    },
+    {
+      "formula_name": "消風散",
+      "category": "外科正宗-皮膚專科",
+      "must_have": {
+        "severe_itching": 0.40,
+        "wind_wheals": 0.35,
+        "urticaria": 0.25
+      },
+      "should_have": {
+        "skin_redness_swelling": 0.15,
+        "eczema": 0.15,
+        "fever": 0.10
+      },
+      "forbidden": [
+        "cold_limbs",
+        "pulse_fine_weak",
+        "diarrhea_clear_food"
+      ],
+      "ingredients": [
+        "當歸", "生地", "防風", "蟬蛻", "知母", "苦參", "胡麻", "荊芥", "蒼朮", "牛蒡子", "石膏", "甘草", "木通"
+      ],
+      "source_clause": [
+        {
+          "clause_number": "外科正宗",
+          "text": "治風濕浸淫血脈，致生瘡疥，搔癢不絕，及大人小兒風熱癮疹，遍身雲片斑點，乍有乍無並效。"
+        }
+      ]
+    },
+    {
+      "formula_name": "當歸飲子",
+      "category": "濟生方-皮膚專科",
+      "must_have": {
+        "skin_scaling_dryness": 0.35,
+        "severe_itching": 0.35,
+        "psoriasis": 0.30
+      },
+      "should_have": {
+        "pulse_fine_weak": 0.20,
+        "eczema": 0.10
+      },
+      "forbidden": [
+        "skin_exudation",
+        "high_fever",
+        "pulse_flooding_large"
+      ],
+      "ingredients": [
+        "當歸", "白芍", "川芎", "生地", "白蒺藜", "防風", "荊芥", "何首烏", "黃耆", "甘草"
+      ],
+      "source_clause": [
+        {
+          "clause_number": "濟生方",
+          "text": "治心血凝滯，內蘊風熱，發見皮膚，遍身瘡疥，或腫或癢，或流水有窠，不問久近，及兩腿生瘡。"
+        }
+      ]
+    },
+    {
+      "formula_name": "龍膽瀉肝湯",
+      "category": "醫宗金鑑-皮膚專科",
+      "must_have": {
+        "skin_exudation": 0.35,
+        "skin_redness_swelling": 0.30,
+        "eczema": 0.35
+      },
+      "should_have": {
+        "bitter_mouth_dry_throat": 0.15,
+        "urine_yellow": 0.15,
+        "severe_itching": 0.10
+      },
+      "forbidden": [
+        "cold_limbs",
+        "pulse_fine_weak",
+        "diarrhea_clear_food"
+      ],
+      "ingredients": [
+        "龍膽草", "黃芩", "梔子", "澤瀉", "木通", "車前子", "當歸", "生地黃", "柴胡", "生甘草"
+      ],
+      "source_clause": [
+        {
+          "clause_number": "醫宗金鑑",
+          "text": "治肝膽經實火濕熱，脇痛耳聾，膽溢口苦，或陰挺陰腫，汗臭，溲赤，及濕熱流注之下部瘡瘍。"
+        }
+      ]
     }
   ]
 }

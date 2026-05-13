@@ -9,7 +9,7 @@ import json
 import logging
 import uvicorn
 from typing import List
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -134,6 +134,7 @@ SYMPTOM_MAP = {
     'urine_yellow': '尿黃',
     'vomiting_nausea': '嘔逆',
     'yellow_dry_tongue_coating': '舌苔黃燥',
+    'yellow_skin_eyes_jaundice': '身黃如橘子色/黃疸',
     'yin_yang_collapse_cold_limbs': '陰陽暴脫四肢冰冷',
     'abdominal_mass': '腹中包塊/癥瘕',
     'blood_stasis_tongue': '舌有瘀點瘀斑',
@@ -151,7 +152,22 @@ SYMPTOM_MAP = {
     'stabbing_lower_abdomen': '少腹刺痛拒按',
     'throat_obstruction_globus': '咽中如有炙臠',
     'throbbing_below_heart': '心下逆滿/氣上衝',
-    'uterine_bleeding_leakage': '崩漏下血'
+    'uterine_bleeding_leakage': '崩漏下血',
+    'gallstones': '膽結石',
+    'lipoma': '脂肪瘤',
+    'right_upper_quadrant_pain': '右上腹悶痛',
+    'fatty_liver': '脂肪肝',
+    'gout': '痛風',
+    'insomnia': '失眠',
+    'dizziness': '眩暈',
+    'tinnitus': '耳鳴',
+    'eczema': '濕疹',
+    'urticaria': '蕁麻疹',
+    'psoriasis': '乾癬',
+    'severe_itching': '瘙癢劇烈',
+    'skin_redness_swelling': '皮膚紅腫',
+    'skin_exudation': '皮膚滲液/流滋',
+    'wind_wheals': '風團/蕁麻疹塊'
 }
 
 # ─── FRONTEND STATIC ROUTING ──────────────────────────────────────────
@@ -216,6 +232,7 @@ async def analyze_symptoms(req: AnalyzeRequest):
 2. 若最吻合方劑為「理中丸/理中湯」，但患者伴有「嘔吐/噁心」，應提示化裁為「理中加半夏生薑湯」。
 3. 若患者有明顯「血瘀（舌有瘀斑、少腹刺痛或肌膚甲錯）」，請特別分析病因病位：是下焦實熱蓄血（桃核承氣湯），還是虛勞乾血（大黃䗪蟲丸），並給予明確的攻補兼施方針。
 4. 結合歷史經典醫案（如胡希恕、曹穎甫醫案思考模型），分析其表裡寒熱，給出明確的服用禁忌與調護（如服桂枝湯後喝熱稀粥、避風寒等）。
+5. 必須新增一個獨立區塊「**《本經疏證》藥物精解**」：請嚴格根據清代鄒澍《本經疏證》的理論，解析推薦方劑中的核心藥物（如桂枝、麻黃、當歸等），提取書中的邏輯與經驗，深度說明該藥物為何能針對患者的現有症狀。
 
 不需要免責聲明，直接以老中醫大師的口吻進行系統性剖析。輸出格式請使用 Markdown，排版要精美、段落分明。
 """
@@ -226,9 +243,11 @@ async def analyze_symptoms(req: AnalyzeRequest):
                     {"role": "system", "content": "You are a professional Traditional Chinese Medicine practitioner from the Jingfang (Classical Formula) school."},
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.3
             )
             llm_analysis = extract_content_or_reasoning(response)
+            
+            # Fix LLM tokenization artifacts for rare characters (e.g. 癥瘕)
+            llm_analysis = llm_analysis.replace("癥", "癥瘕").replace("", "")
         else:
             llm_analysis = "根據您提供的症狀，系統目前無法匹配到完全吻合的經典方劑。建議您重新檢視症狀是否完整，或者這可能屬於較為複雜的變證，需要進一步四診合參。"
     except Exception as e:
@@ -273,6 +292,7 @@ async def extract_symptoms(req: ExtractRequest):
 【約束條件】:
 1. "extracted_keys" 中填寫的英文 Key 必須與提供標準清單中完全一致！如果主訴中沒有對應標準症狀，不要隨意放入。
 2. 對於「虛實、寒熱」等關鍵點（例如：腹痛喜按或拒按、口渴喜冷飲或熱飲）若未提及，必須在 "missing_questions" 中提出追問。
+3. 【極度重要】不要忽視雜病與皮膚專科症狀！只要主訴中出現「濕疹」、「脂肪瘤」、「膽結石」、「失眠」、「乾癬」等病名，請務必精準提取對應的 Key (例如: eczema, lipoma, gallstones)，絕對不可遺漏！
 """
         response = call_llm(
             task="curator",
@@ -311,6 +331,56 @@ async def extract_symptoms(req: ExtractRequest):
             "logic_hints": "AI 提取暫時出現阻礙，請稍後重試。",
             "missing_questions": []
         }
+
+@app.post("/api/upload_book")
+async def upload_book(file: UploadFile = File(...)):
+    """Receive a text or epub file, ingest it, and add to the local RAG DB."""
+    if not file.filename.endswith(('.txt', '.md', '.epub')):
+        raise HTTPException(status_code=400, detail="Only .txt, .md, and .epub files are supported.")
+        
+    try:
+        content_bytes = await file.read()
+        
+        if file.filename.endswith('.epub'):
+            import zipfile
+            import re
+            import io
+            content = ""
+            try:
+                with zipfile.ZipFile(io.BytesIO(content_bytes)) as z:
+                    for item in z.namelist():
+                        if item.endswith(('.html', '.xhtml', '.htm')):
+                            html_content = z.read(item).decode('utf-8', errors='ignore')
+                            # Basic strip HTML tags
+                            text = re.sub(r'<[^>]+>', ' ', html_content)
+                            content += text + "\n"
+            except Exception as e:
+                logger.error(f"Failed to parse epub: {e}")
+                raise HTTPException(status_code=400, detail="Failed to parse the EPUB file. It might be corrupted.")
+        else:
+            content = content_bytes.decode('utf-8', errors='replace')
+        
+        from plugins.shanghan.ingest_medical_text import ingest_content, save_records
+        
+        # Ingest
+        book_name = file.filename.rsplit('.', 1)[0]
+        records = ingest_content(content, book_name=book_name, source="ui_upload")
+        
+        if not records:
+            raise HTTPException(status_code=400, detail="No readable content found in file.")
+            
+        # Save to DB
+        db_path = os.path.join(PLUGIN_DIR, "medical_knowledge_db.json")
+        total = save_records(records, output_path=db_path)
+        
+        return {
+            "success": True,
+            "message": f"Successfully ingested {len(records)} chunks from {file.filename}.",
+            "total_records": total
+        }
+    except Exception as e:
+        logger.error(f"Failed to upload and ingest book: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=9300)

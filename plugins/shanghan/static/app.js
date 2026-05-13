@@ -54,7 +54,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 "diarrhea_clear_food_with_spleen_collapse", "diarrhea_due_to_spleen_deficiency",
                 "diarrhea_without_dry_feces", "severe_interior_excess_with_dry_feces",
                 "delirious_speech", "throbbing_below_heart", "splash_sound_epigastric",
-                "difficult_sticky_defecation"
+                "difficult_sticky_defecation", "thirst_with_water_vomiting"
             ]
         },
         "excretion": {
@@ -67,7 +67,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 "urine_yellow", "nocturia_frequent", "heart_palpitation", "salivation",
                 "no_qi_rush_after_purging", "severe_postpartum_weakness",
                 "severe_yin_yang_deficiency_with_limb_spasms", "alcoholic_constitution",
-                "generalized_edema", "shortness_of_breath_exertion"
+                "generalized_edema", "shortness_of_breath_exertion", "yellow_skin_eyes_jaundice"
             ]
         },
         "gynecology": {
@@ -88,6 +88,22 @@ document.addEventListener("DOMContentLoaded", () => {
                 "red_tongue_scanty_coating", "yellow_dry_tongue_coating",
                 "tongue_red_with_no_coating", "blood_stasis_tongue", "skin_scaling_dryness",
                 "stabbing_lower_abdomen", "dark_circles_under_eyes"
+            ]
+        },
+        "miscellaneous": {
+            "label": "雜病癥瘕",
+            "icon": "🦠",
+            "keys": [
+                "gallstones", "lipoma", "right_upper_quadrant_pain",
+                "fatty_liver", "gout", "insomnia", "dizziness", "tinnitus"
+            ]
+        },
+        "dermatology": {
+            "label": "皮膚專科",
+            "icon": "🧴",
+            "keys": [
+                "eczema", "urticaria", "psoriasis", "severe_itching",
+                "skin_redness_swelling", "skin_exudation", "wind_wheals"
             ]
         }
     };
@@ -446,5 +462,70 @@ document.addEventListener("DOMContentLoaded", () => {
             element.style.opacity = opacity;
             if (opacity >= 1) clearInterval(fade);
         }, 30);
+    }
+
+    // --- Book Upload UI Logic ---
+    const dropzone = document.getElementById("book-upload-zone");
+    const fileInput = document.getElementById("book-file-input");
+    const uploadLoader = document.getElementById("upload-loader");
+    
+    if (dropzone && fileInput) {
+        dropzone.addEventListener("click", () => fileInput.click());
+        
+        dropzone.addEventListener("dragover", (e) => {
+            e.preventDefault();
+            dropzone.classList.add("dragover");
+        });
+        
+        dropzone.addEventListener("dragleave", () => {
+            dropzone.classList.remove("dragover");
+        });
+        
+        dropzone.addEventListener("drop", (e) => {
+            e.preventDefault();
+            dropzone.classList.remove("dragover");
+            if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                handleFileUpload(e.dataTransfer.files[0]);
+            }
+        });
+        
+        fileInput.addEventListener("change", (e) => {
+            if (e.target.files && e.target.files.length > 0) {
+                handleFileUpload(e.target.files[0]);
+            }
+            // Reset input so the same file can be selected again if needed
+            fileInput.value = "";
+        });
+    }
+
+    async function handleFileUpload(file) {
+        if (!file.name.endsWith('.txt') && !file.name.endsWith('.md') && !file.name.endsWith('.epub')) {
+            alert("請上傳 .txt, .md 或 .epub 格式的檔案！");
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append("file", file);
+
+        uploadLoader.style.display = "flex";
+
+        try {
+            const response = await fetch("/api/upload_book", {
+                method: "POST",
+                body: formData
+            });
+            const data = await response.json();
+            
+            if (data.success) {
+                alert(`✅ 醫書/醫案學習完成！\n已成功解析並擴充至知識庫。\n(本次新增 ${data.message.split('ingested ')[1].split(' chunks')[0]} 個知識片段)`);
+            } else {
+                alert("上傳失敗：" + (data.detail || "未知錯誤"));
+            }
+        } catch (err) {
+            console.error("Upload error:", err);
+            alert("上傳失敗，無法連接伺服器。");
+        } finally {
+            uploadLoader.style.display = "none";
+        }
     }
 });

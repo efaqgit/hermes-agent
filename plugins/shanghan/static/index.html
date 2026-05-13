@@ -50,6 +50,20 @@
                     <span class="btn-text">執行 AI 辨證</span>
                     <span class="btn-loader"></span>
                 </button>
+
+                <!-- Book Upload Zone -->
+                <div id="book-upload-zone" class="upload-dropzone">
+                    <input type="file" id="book-file-input" accept=".txt,.md,.epub" style="display: none;">
+                    <div class="dropzone-content">
+                        <span class="dropzone-icon">📚</span>
+                        <p>拖曳醫案 / 醫書檔案至此</p>
+                        <span class="dropzone-hint">或點擊選擇檔案 (.txt, .md, .epub)</span>
+                    </div>
+                    <div id="upload-loader" class="upload-loader" style="display: none;">
+                        <span class="loader-spinner"></span>
+                        <span>解析學習中...</span>
+                    </div>
+                </div>
             </section>
             
             <!-- Right Column: Output -->
