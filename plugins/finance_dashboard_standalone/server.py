@@ -1,0 +1,1879 @@
+"""Standalone Financial & Quant Dashboard Server.
+
+An independent FastAPI server running on port 9200.
+Connects directly to:
+1. Moomoo Live Trading API (Positions, Balance, Orders)
+2. Interactive Technical Charts (TradingView)
+3. AI Hedge Fund Master Consensus Flows
+"""
+
+import sys
+import os
+import json
+import logging
+import socket
+import uvicorn
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from typing import List, Optional
+
+# Path resolution to import local modules
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+from tools.moomoo_tools import moomoo_get_positions, moomoo_get_account_info, moomoo_get_orders
+from plugins.ai_hedge_fund.tools import run_hedge_fund_analysis
+
+# Initialize logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger("StandaloneFinanceDashboard")
+
+app = FastAPI(
+    title="Unified Quant & Finance Standalone Terminal",
+    description="Independent Financial Dashboard serving Moomoo, Charting, and AI Hedge Fund operations.",
+    version="2.0.0"
+)
+
+# Enable CORS for local development freedom
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+class AnalysisRequest(BaseModel):
+    tickers: List[str]
+    months_back: Optional[int] = 3
+
+STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+
+def _is_futu_opend_running(host: str = "127.0.0.1", port: int = 11111) -> bool:
+    """Check if Moomoo's Futu OpenD is actively running on the target port."""
+    try:
+        with socket.create_connection((host, port), timeout=0.5):
+            return True
+    except Exception:
+        return False
+
+def _get_moomoo_code(ticker: str) -> str:
+    """Standardize ticker for Moomoo (e.g. US.TSLA)."""
+    ticker = ticker.strip().upper()
+    if "." in ticker:
+        return ticker
+    if ticker.isdigit():
+        return f"HK.{ticker.zfill(5)}"
+    return f"US.{ticker}"
+
+# ─── FRONTEND STATIC ROUTING ──────────────────────────────────────────
+
+@app.get("/")
+async def get_index():
+    """Serve the single-page application dashboard."""
+    index_path = os.path.join(STATIC_DIR, "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
+    return HTMLResponse("<h2>Frontend static/index.html is missing. Please make sure the static files are generated.</h2>")
+
+@app.get("/app.js")
+async def get_js():
+    """Serve the React application code."""
+    js_path = os.path.join(STATIC_DIR, "app.js")
+    if os.path.exists(js_path):
+        return FileResponse(js_path)
+    return HTMLResponse("// Frontend static/app.js is missing.", media_type="application/javascript")
+
+# ─── API ENDPOINTS ───────────────────────────────────────────────────
+
+@app.get("/api/connection-status")
+async def check_connection():
+    """Check connection status to Futu OpenD."""
+    opend_ok = _is_futu_opend_running()
+    return {
+        "success": True,
+        "futu_opend": opend_ok,
+        "yfinance": True,
+        "message": "Futu OpenD is LIVE" if opend_ok else "Futu OpenD Offline (yfinance Fallback active)"
+    }
+
+@app.get("/api/positions")
+async def get_moomoo_positions():
+    """Retrieve live Moomoo positions."""
+    try:
+        if not _is_futu_opend_running():
+            return {
+                "success": False,
+                "error": "Moomoo FutuOpenD is not running. Live portfolio disabled.",
+                "data": []
+            }
+            
+        res_str = moomoo_get_positions(env="SIMULATE")
+        res = json.loads(res_str)
+        if res.get("success") and res.get("data"):
+            for row in res["data"]:
+                # Convert pl_ratio from percentage (Moomoo API) to fraction (expected by frontend)
+                ratio = row.get("pl_ratio")
+                if ratio is not None:
+                    row["pl_ratio"] = float(ratio) / 100.0
+                else:
+                    row["pl_ratio"] = 0.0
+                
+                # Standardize price key
+                row["nominal_price"] = float(row.get("nominal_price") or row.get("cost_price") or 0.0)
+        return res
+    except Exception as e:
+        logger.exception("Failed to get positions")
+        return {"success": False, "error": str(e), "data": []}
+
+@app.get("/api/account")
+async def get_moomoo_account():
+    """Retrieve live Moomoo account equity, balances and buying power."""
+    try:
+        if not _is_futu_opend_running():
+            return {
+                "success": False,
+                "error": "Moomoo FutuOpenD is not running.",
+                "data": {}
+            }
+            
+        res_str = moomoo_get_account_info(env="SIMULATE")
+        res = json.loads(res_str)
+        if res.get("success") and res.get("data"):
+            # Map Futu keys to what frontend expects to prevent TypeError crashes
+            for row in res["data"]:
+                row["cash_balance"] = float(row.get("cash") or 0.0)
+                row["power_balance"] = float(row.get("power") or 0.0)
+                row["total_assets"] = float(row.get("total_assets") or 0.0)
+                row["market_val"] = float(row.get("market_val") or 0.0)
+        return res
+    except Exception as e:
+        logger.exception("Failed to get account info")
+        return {"success": False, "error": str(e), "data": {}}
+
+@app.get("/api/orders")
+async def get_moomoo_orders():
+    """Retrieve Moomoo daily trading orders list."""
+    try:
+        if not _is_futu_opend_running():
+            return {
+                "success": False,
+                "error": "Moomoo FutuOpenD is not running.",
+                "data": []
+            }
+            
+        res_str = moomoo_get_orders(env="SIMULATE")
+        res = json.loads(res_str)
+        return res
+    except Exception as e:
+        logger.exception("Failed to get orders list")
+        return {"success": False, "error": str(e), "data": []}
+
+WATCHLIST_FILE = os.path.join(os.path.expanduser("~"), ".hermes", "finance_watchlist.json")
+
+def _load_watchlist() -> list:
+    tickers = []
+    if os.path.exists(WATCHLIST_FILE):
+        try:
+            with open(WATCHLIST_FILE, "r") as f:
+                raw_list = json.load(f)
+                if isinstance(raw_list, list):
+                    tickers = raw_list
+        except Exception:
+            pass
+    if not tickers:
+        tickers = ["AMAT", "MSTR", "NVDA", "TSLA"]
+        
+    import re
+    def to_half_width(s: str) -> str:
+        out = []
+        for c in s:
+            code = ord(c)
+            if code == 0x3000:
+                out.append(" ")
+            elif 0xFF01 <= code <= 0xFF5E:
+                out.append(chr(code - 0xfee0))
+            else:
+                out.append(c)
+        return "".join(out)
+        
+    sanitized = []
+    seen = set()
+    for t in tickers:
+        if not isinstance(t, str):
+            continue
+        cleaned = to_half_width(t).strip().upper()
+        # Remove any character that is not standard uppercase alphanumeric, a dot, or a hyphen
+        cleaned = re.sub(r"[^A-Z0-9.-]", "", cleaned)
+        if cleaned and len(cleaned) <= 10 and cleaned not in seen:
+            sanitized.append(cleaned)
+            seen.add(cleaned)
+            
+    if not sanitized:
+        sanitized = ["AMAT", "MSTR", "NVDA", "TSLA"]
+    return sanitized
+
+def _save_watchlist(tickers: list):
+    os.makedirs(os.path.dirname(WATCHLIST_FILE), exist_ok=True)
+    with open(WATCHLIST_FILE, "w") as f:
+        json.dump(tickers, f, indent=2)
+
+@app.get("/api/watchlist")
+async def get_watchlist():
+    """Retrieve dynamic stock watchlist with live quotes."""
+    tickers = _load_watchlist()
+    data = []
+    import yfinance as yf
+    for ticker in tickers:
+        try:
+            t = yf.Ticker(ticker)
+            hist = t.history(period="2d", interval="1d")
+            if hist is not None and len(hist) >= 1:
+                last_price = float(hist["Close"].iloc[-1])
+                prev_close = float(hist["Close"].iloc[-2]) if len(hist) >= 2 else last_price
+                change_pct = ((last_price / prev_close) - 1) * 100 if prev_close > 0 else 0
+                high = float(hist["High"].iloc[-1])
+                low = float(hist["Low"].iloc[-1])
+            else:
+                last_price, prev_close, change_pct, high, low = 0.0, 0.0, 0.0, 0.0, 0.0
+            data.append({
+                "symbol": ticker,
+                "price": round(last_price, 2),
+                "prev_close": round(prev_close, 2),
+                "change_pct": round(change_pct, 2),
+                "high": round(high, 2),
+                "low": round(low, 2)
+            })
+        except Exception as e:
+            logger.error(f"Failed to fetch watchlist quote for {ticker}: {e}")
+            data.append({
+                "symbol": ticker,
+                "price": 0.0,
+                "prev_close": 0.0,
+                "change_pct": 0.0,
+                "high": 0.0,
+                "low": 0.0,
+                "error": str(e)
+            })
+    return {"success": True, "data": data}
+
+@app.post("/api/watchlist")
+async def add_to_watchlist(ticker: str):
+    """Add a ticker to the watchlist."""
+    import re
+    def to_half_width(s: str) -> str:
+        out = []
+        for c in s:
+            code = ord(c)
+            if code == 0x3000:
+                out.append(" ")
+            elif 0xFF01 <= code <= 0xFF5E:
+                out.append(chr(code - 0xfee0))
+            else:
+                out.append(c)
+        return "".join(out)
+        
+    cleaned = to_half_width(ticker).strip().upper()
+    cleaned = re.sub(r"[^A-Z0-9.-]", "", cleaned)
+    if not cleaned or len(cleaned) > 10:
+        raise HTTPException(status_code=400, detail="Invalid ticker format")
+        
+    tickers = _load_watchlist()
+    if cleaned not in tickers:
+        tickers.append(cleaned)
+        _save_watchlist(tickers)
+    return {"success": True, "message": f"Added {cleaned} to watchlist", "data": tickers}
+
+@app.delete("/api/watchlist")
+async def delete_from_watchlist(ticker: str):
+    """Remove a ticker from the watchlist."""
+    tickers = _load_watchlist()
+    ticker = ticker.upper().strip()
+    if ticker in tickers:
+        tickers.remove(ticker)
+        _save_watchlist(tickers)
+    return {"success": True, "message": f"Removed {ticker} from watchlist", "data": tickers}
+
+@app.post("/api/run-analysis")
+async def run_analysis(req: AnalysisRequest):
+    """Run Multi-Agent analysis on specified tickers."""
+    try:
+        tickers = [t.upper().strip() for t in req.tickers if t.strip()]
+        if not tickers:
+            raise HTTPException(status_code=400, detail="No valid tickers provided")
+            
+        markdown_report = run_hedge_fund_analysis(tickers, months_back=req.months_back)
+        return {
+            "success": True,
+            "markdown": markdown_report
+        }
+    except Exception as e:
+        logger.exception("Failed to run hedge fund analysis")
+        raise HTTPException(status_code=500, detail=str(e))
+
+OBSIDIAN_DIR = "/Users/kennethlin/Github/@obsidian/finance"
+
+def _translate_news_titles(news_list: list) -> list:
+    """Batch-translates headlines to Taiwan Chinese (Traditional) and analyzes sentiment using auxiliary LLM."""
+    if not news_list:
+        return news_list
+        
+    titles = [item.get("title", "") for item in news_list if item.get("title")]
+    if not titles:
+        return news_list
+        
+    prompt = f"""You are an elite financial translator and stock sentiment analyst. 
+Translate the following English stock news headlines into natural, professional Taiwan Chinese (繁體中文).
+Additionally, perform sentiment analysis on each headline and provide a brief 1-sentence Taiwanese explanation (under 15 words) of why you chose that sentiment.
+
+Always use proper local Taiwanese terminology (e.g., use '晶片' for chips, '特斯拉' for Tesla, '輝達' for NVIDIA, '台積電' for TSMC, '營收' for revenue, '半導體' for semiconductors, etc.).
+
+Return ONLY a raw JSON array of objects in the exact same order. Do NOT wrap in markdown code blocks like ```json. Do NOT include any explanations or conversational preambles.
+
+Response JSON Schema:
+[
+  {{
+    "title_translated": "Translated Title (Traditional Chinese)",
+    "sentiment": "BULLISH" | "BEARISH" | "NEUTRAL",
+    "reason": "1-sentence Taiwanese reason (under 15 characters, e.g. '獲利預期上升', '負債比過高')"
+  }}
+]
+
+Input headlines:
+{json.dumps(titles, ensure_ascii=False, indent=2)}
+"""
+    try:
+        from agent.auxiliary_client import call_llm, extract_content_or_reasoning
+        response = call_llm(
+            task="translation",
+            messages=[
+                {"role": "system", "content": "You are a professional financial translator and sentiment analyst specialized in Taiwan Chinese. You only output raw valid JSON arrays matching the requested schema."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.1
+        )
+        ans = extract_content_or_reasoning(response)
+        
+        # Strip potential markdown formatting
+        import re
+        ans_cleaned = re.sub(r"```[a-zA-Z]*", "", ans).strip()
+        ans_cleaned = ans_cleaned.strip("`").strip()
+        
+        parsed_results = json.loads(ans_cleaned)
+        if isinstance(parsed_results, list) and len(parsed_results) == len(titles):
+            for idx, item in enumerate(news_list):
+                res = parsed_results[idx]
+                item["title_translated"] = str(res.get("title_translated") or item.get("title"))
+                item["sentiment"] = str(res.get("sentiment") or "NEUTRAL")
+                item["reason"] = str(res.get("reason") or "中性輿情")
+        else:
+            for item in news_list:
+                item["title_translated"] = item.get("title", "")
+                item["sentiment"] = "NEUTRAL"
+                item["reason"] = "翻譯解析異常"
+    except Exception as e:
+        logger.error(f"Failed to batch translate and analyze news: {e}")
+        for item in news_list:
+            item["title_translated"] = item.get("title", "")
+            item["sentiment"] = "NEUTRAL"
+            item["reason"] = "系統連線異常"
+            
+    return news_list
+
+def _run_monte_carlo(ticker: str) -> dict:
+    import numpy as np
+    import yfinance as yf
+    
+    ticker = ticker.upper().strip()
+    t = yf.Ticker(ticker)
+    info = t.info
+    
+    current_price = float(info.get("currentPrice") or info.get("previousClose") or 100.0)
+    shares_outstanding = int(info.get("sharesOutstanding") or 10000000)
+    total_cash = float(info.get("totalCash") or 0.0)
+    total_debt = float(info.get("totalDebt") or 0.0)
+    
+    # Base amounts (fallback to net income if FCF is negative or missing)
+    fcf_base = float(info.get("freeCashflow") or info.get("operatingCashflow") or 0.0)
+    earnings_base = float(info.get("netIncomeToCommon") or info.get("netIncome") or 0.0)
+    
+    # Currency normalization check to solve foreign ADRs currency mismatch (e.g., TSM)
+    financial_currency = info.get("financialCurrency")
+    trading_currency = info.get("currency") or "USD"
+    fx_rate = 1.0
+    if financial_currency and trading_currency and financial_currency.upper() != trading_currency.upper():
+        fc = financial_currency.upper()
+        tc = trading_currency.upper()
+        try:
+            rate_t = yf.Ticker(f"{fc}{tc}=X")
+            rate_val = rate_t.info.get("previousClose") or rate_t.info.get("regularMarketPrice")
+            if rate_val:
+                fx_rate = float(rate_val)
+            else:
+                rate_t2 = yf.Ticker(f"{tc}{fc}=X")
+                rate_val2 = rate_t2.info.get("previousClose") or rate_t2.info.get("regularMarketPrice")
+                if rate_val2:
+                    fx_rate = 1.0 / float(rate_val2)
+        except Exception:
+            # Common hardcoded fallback rates if yfinance exchange rates fail
+            fallbacks = {
+                ("TWD", "USD"): 1.0 / 31.5,
+                ("HKD", "USD"): 1.0 / 7.8,
+                ("CNY", "USD"): 1.0 / 7.2,
+                ("EUR", "USD"): 1.09,
+                ("JPY", "USD"): 1.0 / 150.0,
+                ("GBP", "USD"): 1.25,
+            }
+            fx_rate = fallbacks.get((fc, tc)) or fallbacks.get((tc, fc), 1.0)
+            if (tc, fc) in fallbacks:
+                fx_rate = 1.0 / fx_rate
+                
+    if fx_rate != 1.0:
+        total_cash *= fx_rate
+        total_debt *= fx_rate
+        fcf_base *= fx_rate
+        earnings_base *= fx_rate
+        logger.info(f"Normalized {ticker} financial values from {financial_currency} to {trading_currency} using fx_rate={fx_rate:.6f}")
+        
+    net_debt = total_debt - total_cash
+    
+    if fcf_base <= 0 and earnings_base > 0:
+        fcf_base = earnings_base * 0.6
+    if earnings_base <= 0 and fcf_base > 0:
+        earnings_base = fcf_base * 1.5
+    if fcf_base <= 0 and earnings_base <= 0:
+        fcf_base = current_price * shares_outstanding * 0.04
+        earnings_base = current_price * shares_outstanding * 0.06
+
+    trials = 10000
+    np.random.seed(42)
+    
+    # Stochastic variables dynamically estimated based on yfinance parameters
+    beta = info.get("beta")
+    if beta is None or beta <= 0:
+        beta = 1.0
+    
+    # Industry-aware WACC adjustment
+    sector = info.get("sector") or ""
+    industry = info.get("industry") or ""
+    is_reit_or_utility = sector in ["Real Estate", "Utilities"] or "REIT" in industry
+    is_financial = sector in ["Financial Services", "Financial"]
+    
+    # Risk-free rate (4.2%) + Beta * Equity Risk Premium (5.0%)
+    cost_of_equity = 0.042 + (beta * 0.05)
+    
+    if is_reit_or_utility:
+        # High leverage in REITs/Utilities lowers WACC due to cheaper secured debt financing (often 50%+ of capital structure)
+        # We assume a standard target weight of 50% equity and 50% debt, with standard cost of debt around 5.5%
+        wacc_mean = (0.5 * cost_of_equity) + (0.5 * 0.055)
+        wacc_mean = min(max(wacc_mean, 0.055), 0.09)
+        logger.info(f"Industry-aware cost of capital (REIT/Utility) for {ticker}: WACC estimated at {wacc_mean*100:.2f}% (no standard corporate leverage penalty applied)")
+    elif is_financial:
+        # Financial institutions rely heavily on cheap liability/deposit leverage
+        wacc_mean = (0.6 * cost_of_equity) + (0.4 * 0.045)
+        wacc_mean = min(max(wacc_mean, 0.06), 0.10)
+        logger.info(f"Industry-aware cost of capital (Financial) for {ticker}: WACC estimated at {wacc_mean*100:.2f}% (no standard corporate leverage penalty applied)")
+    else:
+        # Standard corporate calculation
+        wacc_mean = cost_of_equity
+        debt_equity = info.get("debtToEquity")
+        if debt_equity:
+            # High leverage increases standard corporate WACC risk
+            wacc_mean += min(0.02, (debt_equity / 100.0) * 0.005)
+        wacc_mean = min(max(wacc_mean, 0.065), 0.125)
+
+    rev_growth = info.get("revenueGrowth")
+    earn_growth = info.get("earningsGrowth")
+    growth_est = 0.10
+    if earn_growth is not None and earn_growth != 0:
+        growth_est = earn_growth
+    elif rev_growth is not None and rev_growth != 0:
+        growth_est = rev_growth
+    
+    growth_stage1_mean = min(max(growth_est, 0.05), 0.25)
+    growth_stage2_mean = min(max(growth_stage1_mean * 0.6, 0.03), 0.12)
+    perp_mean = 0.025
+
+    wacc_trials = np.random.normal(wacc_mean, 0.006, trials)
+    wacc_trials = np.clip(wacc_trials, 0.06, 0.14)
+    
+    growth_stage1_trials = np.random.normal(growth_stage1_mean, 0.02, trials)
+    growth_stage2_trials = np.random.normal(growth_stage2_mean, 0.012, trials)
+    
+    perpetual_growth_trials = np.random.normal(perp_mean, 0.003, trials)
+    perpetual_growth_trials = np.minimum(perpetual_growth_trials, wacc_trials - 0.01)
+    
+    def run_dcf(base_amount):
+        results = []
+        for i in range(trials):
+            wacc = wacc_trials[i]
+            g1 = growth_stage1_trials[i]
+            g2 = growth_stage2_trials[i]
+            g_perp = perpetual_growth_trials[i]
+            
+            projected = []
+            current = base_amount
+            for year in range(1, 6):
+                current = current * (1 + g1)
+                projected.append(current)
+            for year in range(6, 11):
+                current = current * (1 + g2)
+                projected.append(current)
+                
+            pv = 0
+            for year in range(1, 11):
+                pv += projected[year - 1] / ((1 + wacc) ** year)
+                
+            tv = (projected[-1] * (1 + g_perp)) / (wacc - g_perp)
+            pv_tv = tv / ((1 + wacc) ** 10)
+            
+            ev = pv + pv_tv
+            eq = ev - net_debt
+            results.append(eq / shares_outstanding)
+        return np.array(results)
+        
+    fcf_results = run_dcf(fcf_base)
+    earnings_results = run_dcf(earnings_base)
+    
+    fcf_mean = float(np.mean(fcf_results))
+    earnings_mean = float(np.mean(earnings_results))
+
+    fcf_hist, fcf_bin_edges = np.histogram(fcf_results, bins=25)
+    earnings_hist, earnings_bin_edges = np.histogram(earnings_results, bins=25)
+
+    fcf_distribution = [
+        {
+            "bin_start": round(float(fcf_bin_edges[i]), 2),
+            "bin_end": round(float(fcf_bin_edges[i+1]), 2),
+            "count": int(fcf_hist[i])
+        }
+        for i in range(len(fcf_hist))
+    ]
+    earnings_distribution = [
+        {
+            "bin_start": round(float(earnings_bin_edges[i]), 2),
+            "bin_end": round(float(earnings_bin_edges[i+1]), 2),
+            "count": int(earnings_hist[i])
+        }
+        for i in range(len(earnings_hist))
+    ]
+    
+    # Fetch Insider Trades
+    insider_data = []
+    try:
+        df = t.insider_transactions
+        if df is not None and not df.empty:
+            for _, row in df.head(6).iterrows():
+                shares_raw = float(row.get("Shares") or 0.0)
+                value_raw = float(row.get("Value") or 0.0)
+                insider_data.append({
+                    "insider": str(row.get("Insider") or "N/A"),
+                    "position": str(row.get("Position") or "N/A"),
+                    "transaction": str(row.get("Transaction") or "N/A"),
+                    "shares": 0 if np.isnan(shares_raw) else int(shares_raw),
+                    "value": 0.0 if np.isnan(value_raw) else float(value_raw),
+                    "date": str(row.get("Start Date") or "N/A")
+                })
+    except Exception as e:
+        logger.error(f"Failed to fetch insider transactions for {ticker}: {e}")
+
+    # Fetch SEC Filings
+    sec_data = []
+    try:
+        sec = t.sec_filings
+        if sec:
+            for f in sec[:6]:
+                sec_data.append({
+                    "date": str(f.get("date") or "N/A"),
+                    "type": str(f.get("type") or "N/A"),
+                    "title": str(f.get("title") or "N/A"),
+                    "url": str(f.get("edgarUrl") or "")
+                })
+    except Exception as e:
+        logger.error(f"Failed to fetch SEC filings for {ticker}: {e}")
+
+    # Fetch News
+    news_data = []
+    try:
+        raw_news = t.news
+        if raw_news:
+            for item in raw_news[:6]:
+                title = ""
+                publisher = ""
+                link = ""
+                pub_date = ""
+                if "content" in item:
+                    content = item["content"]
+                    title = content.get("title") or ""
+                    pub_date = content.get("pubDate") or content.get("displayTime") or ""
+                    if "provider" in content:
+                        publisher = content["provider"].get("displayName") or ""
+                    if "canonicalUrl" in content:
+                        link = content["canonicalUrl"].get("url") or ""
+                else:
+                    title = item.get("title") or ""
+                    pub_date = item.get("pubDate") or item.get("providerPublishTime") or ""
+                    publisher = item.get("publisher") or ""
+                    link = item.get("link") or ""
+                
+                if pub_date and "T" in pub_date:
+                    pub_date = pub_date.split("T")[0]
+                
+                news_data.append({
+                    "title": title,
+                    "publisher": publisher,
+                    "link": link,
+                    "date": pub_date
+                })
+    except Exception as e:
+        logger.error(f"Failed to fetch news for {ticker}: {e}")
+
+    # Batch-translate news titles to Taiwan Chinese
+    news_data = _translate_news_titles(news_data)
+
+    pe_trailing = info.get("trailingPE")
+    pe_forward = info.get("forwardPE")
+    peg_ratio = info.get("pegRatio")
+    
+    if peg_ratio is None:
+        pe_val = pe_trailing or pe_forward
+        # Use uncapped real-world growth_est for realistic PEG multiples
+        if pe_val and growth_est and growth_est > 0.005:
+            peg_ratio = float(pe_val) / (float(growth_est) * 100.0)
+
+    return {
+        "ticker": ticker,
+        "current_price": current_price,
+        "shares": shares_outstanding,
+        "cash": total_cash,
+        "debt": total_debt,
+        "net_debt": net_debt,
+        "fcf_base": fcf_base,
+        "earnings_base": earnings_base,
+        "pe_trailing": pe_trailing,
+        "pe_forward": pe_forward,
+        "pb_ratio": info.get("priceToBook"),
+        "peg_ratio": peg_ratio,
+        "profit_margin": info.get("profitMargins"),
+        "roe": info.get("returnOnEquity"),
+        "current_ratio": info.get("currentRatio"),
+        "debt_equity": info.get("debtToEquity"),
+        "beta": beta,
+        "est_wacc": wacc_mean,
+        "est_growth_g1": growth_stage1_mean,
+        "est_growth_g2": growth_stage2_mean,
+        "est_growth_perp": perp_mean,
+        "insider_trades": insider_data,
+        "sec_filings": sec_data,
+        "news_summary": news_data,
+        "fcf_model": {
+            "mean": round(fcf_mean, 2),
+            "median": round(float(np.median(fcf_results)), 2),
+            "p10": round(float(np.percentile(fcf_results, 10)), 2),
+            "p25": round(float(np.percentile(fcf_results, 25)), 2),
+            "p75": round(float(np.percentile(fcf_results, 75)), 2),
+            "p90": round(float(np.percentile(fcf_results, 90)), 2),
+            "upside_pct": round(((fcf_mean / current_price) - 1) * 100, 2),
+            "distribution": fcf_distribution
+        },
+        "earnings_model": {
+            "mean": round(earnings_mean, 2),
+            "median": round(float(np.median(earnings_results)), 2),
+            "p10": round(float(np.percentile(earnings_results, 10)), 2),
+            "p25": round(float(np.percentile(earnings_results, 25)), 2),
+            "p75": round(float(np.percentile(earnings_results, 75)), 2),
+            "p90": round(float(np.percentile(earnings_results, 90)), 2),
+            "upside_pct": round(((earnings_mean / current_price) - 1) * 100, 2),
+            "distribution": earnings_distribution
+        }
+    }
+
+def _generate_ai_highlights(stats: dict) -> str:
+    """Generates AI Financial & Earnings Analysis section using auxiliary LLM in Taiwan Chinese."""
+    ticker = stats["ticker"]
+    roe_pct = f"{stats['roe'] * 100:.2f}%" if stats["roe"] is not None else "N/A"
+    margin_pct = f"{stats['profit_margin'] * 100:.2f}%" if stats["profit_margin"] is not None else "N/A"
+    debt_eq_val = f"{stats['debt_equity']:.2f}%" if stats["debt_equity"] is not None else "N/A"
+    
+    context = f"""
+Ticker: {ticker}
+Current Price: ${stats['current_price']:.2f}
+FCF Model Mean: ${stats['fcf_model']['mean']}
+Earnings Model Mean: ${stats['earnings_model']['mean']}
+ROE: {roe_pct}
+Profit Margin: {margin_pct}
+Debt/Equity: {debt_eq_val}
+Net Debt: ${stats['net_debt']/1e6:.1f}M
+Estimated WACC: {stats.get('est_wacc', 0.085)*100:.2f}%
+Estimated Stage 1 Growth (1-5y): {stats.get('est_growth_g1', 0.10)*100:.2f}%
+Beta: {stats.get('beta', 1.0):.2f}
+"""
+
+    prompt = f"""You are a senior hedge fund portfolio manager and financial analyst.
+Analyze the following financial stats for {ticker} and write a highly professional, deep-dive Financial & Earnings Highlights report in Taiwan Chinese (繁體中文).
+
+The report MUST contain two clear subsections formatted exactly in markdown:
+### 🌟 3 大營運亮點 (3 Key Operational Highlights)
+Provide 3 bullet points. Each point should reference the specific financial data from the context (e.g. ROE, Profit Margin, cash flow, debt levels) and explain why it represents a competitive advantage or positive signal. Keep it concrete, analytical, and professional (avoid generic platitudes).
+
+### ⚠️ 3 大潛在風險 (3 Key Potential Risks)
+Provide 3 bullet points. Each point should reference specific vulnerabilities from the context (e.g. leverage/debt, cash burn/negative FCF, growth slowdown, valuation multiples, high volatility Beta) and explain the potential threat to stock value.
+
+Always use proper local Taiwanese terminology (繁體中文), e.g., use '股東權益報酬率' for ROE, '淨利率' for Profit Margin, '負債權益比' for Debt/Equity, '自由現金流' for FCF, '波動度/風險係數' for Beta, '折現' for discount, etc.
+
+Company financial context:
+{context}
+
+Return ONLY the markdown block. Do NOT include any conversational preamble or markdown code blocks like ```markdown. Just start directly with the markdown headers.
+"""
+
+    try:
+        from agent.auxiliary_client import call_llm, extract_content_or_reasoning
+        response = call_llm(
+            task="analysis",
+            messages=[
+                {"role": "system", "content": "You are an elite hedge fund analyst writing professional investment reports in Taiwan Chinese. You only output raw markdown summaries without conversational fluff."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3
+        )
+        ans = extract_content_or_reasoning(response)
+        return ans.strip()
+    except Exception as e:
+        logger.error(f"Failed to generate AI financial highlights: {e}")
+        return """### 🌟 3 大營運亮點 (3 Key Operational Highlights)
+* **營運基礎穩定**：雖然目前數據面臨挑戰，但公司仍維持一定的市場定位與流動性。
+* **資產負債結構調整中**：在當前的資本環境中，公司正致力於優化資源配置以提升效率。
+* **研發/再投資潛能**：持續關注其未來產品/技術的長線發展動能。
+
+### ⚠️ 3 大潛在風險 (3 Key Potential Risks)
+* **市場波動與系統性風險**：Beta 波動特徵可能放大市場大盤拉回時的跌幅。
+* **資本開支與現金流消耗**：重資本或虧損階段企業需警惕高昂的資本支出對流動性的壓迫。
+* **總體經濟與資金成本壓力**：WACC 反映當前高利率與市場風險溢價，可能壓低貼現估值空間。"""
+
+def _generate_markdown_report(stats: dict) -> str:
+    from datetime import datetime
+    import math
+    ticker = stats["ticker"]
+    
+    roe_pct = f"{stats['roe'] * 100:.2f}%" if stats["roe"] is not None else "N/A"
+    margin_pct = f"{stats['profit_margin'] * 100:.2f}%" if stats["profit_margin"] is not None else "N/A"
+    debt_eq_val = f"{stats['debt_equity']:.2f}%" if stats["debt_equity"] is not None else "N/A"
+    pe_trailing = f"{stats['pe_trailing']:.2f}" if stats["pe_trailing"] is not None else "N/A"
+    pe_forward = f"{stats['pe_forward']:.2f}" if stats["pe_forward"] is not None else "N/A"
+    pb_ratio = f"{stats['pb_ratio']:.2f}" if stats["pb_ratio"] is not None else "N/A"
+    peg_ratio = f"{stats['peg_ratio']:.2f}" if stats["peg_ratio"] is not None else "N/A"
+    curr_ratio = f"{stats['current_ratio']:.2f}" if stats["current_ratio"] is not None else "N/A"
+    
+    upside = stats["earnings_model"]["upside_pct"]
+    if upside >= 15:
+        rating = "強力買入 (Strong Buy)"
+    elif upside >= 5:
+        rating = "逢低買入 (Buy on Dips / Accumulate)"
+    elif upside >= -5:
+        rating = "中性持有 (Hold / Neutral)"
+    else:
+        rating = "高估避險 (Reduce / Avoid)"
+    
+    # ─── GENERATE INLINE VECTOR SVGS FOR OBSIDIAN REPORT ───
+    
+    # 1. Fundamental Radar SVG
+    val_upside = stats["fcf_model"]["upside_pct"]
+    value_val = min(100.0, max(15.0, val_upside + 50.0))
+    
+    growth_rate = stats.get("est_growth_g1") if stats.get("est_growth_g1") is not None else 0.10
+    growth_val = min(100.0, max(15.0, growth_rate * 400.0))
+    
+    de_ratio = stats.get("debt_equity") if stats.get("debt_equity") is not None else 50.0
+    safety_val = min(100.0, max(15.0, 100.0 - (de_ratio / 3.0)))
+    
+    roe_ratio = stats.get("roe") if stats.get("roe") is not None else 0.15
+    efficiency_val = min(100.0, max(15.0, roe_ratio * 300.0))
+    
+    beta_ratio = stats.get("beta") if stats.get("beta") is not None else 1.0
+    momentum_val = min(100.0, max(15.0, 100.0 - abs(1.0 - beta_ratio) * 40.0))
+    
+    cx, cy, r_limit = 160.0, 125.0, 70.0
+    angles = [
+        -math.pi / 2,
+        -math.pi / 2 + (2 * math.pi / 5),
+        -math.pi / 2 + (4 * math.pi / 5),
+        -math.pi / 2 + (6 * math.pi / 5),
+        -math.pi / 2 + (8 * math.pi / 5),
+    ]
+    labels = ["成長性", "獲利效率", "波動抗性", "債務安全", "估值優勢"]
+    values = [growth_val, efficiency_val, momentum_val, safety_val, value_val]
+    
+    def get_radar_point(angle, val_pct):
+        radius = (val_pct / 100.0) * r_limit
+        return {
+            "x": cx + radius * math.cos(angle),
+            "y": cy + radius * math.sin(angle)
+        }
+        
+    grids = [20, 40, 60, 80, 100]
+    grid_polygons = ""
+    for g in grids:
+        g_pts = [get_radar_point(angle, g) for angle in angles]
+        pts_str = " ".join([f"{p['x']:.1f},{p['y']:.1f}" for p in g_pts])
+        grid_polygons += f'  <polygon points="{pts_str}" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="1" />\n'
+        
+    axis_lines = ""
+    for angle in angles:
+        outer = get_radar_point(angle, 100.0)
+        axis_lines += f'  <line x1="{cx:.1f}" y1="{cy:.1f}" x2="{outer["x"]:.1f}" y2="{outer["y"]:.1f}" stroke="rgba(255,255,255,0.12)" stroke-width="1" stroke-dasharray="2,2" />\n'
+        
+    pts = [get_radar_point(angles[i], values[i]) for i in range(5)]
+    pts_str = " ".join([f"{p['x']:.1f},{p['y']:.1f}" for p in pts])
+    
+    dots = ""
+    for p in pts:
+        dots += f'  <circle cx="{p["x"]:.1f}" cy="{p["y"]:.1f}" r="3.5" fill="#10b981" stroke="#04040a" stroke-width="1.5" />\n'
+        
+    labels_markup = ""
+    for i, angle in enumerate(angles):
+        radius = (values[i] / 100.0) * r_limit
+        # Shift label 14px outward from the actual dot
+        label_pct = ((radius + 14.0) / r_limit) * 100.0
+        outer = get_radar_point(angle, label_pct)
+        text_anchor = "middle"
+        if outer["x"] > cx + 10.0:
+            text_anchor = "start"
+        elif outer["x"] < cx - 10.0:
+            text_anchor = "end"
+        labels_markup += f'  <text x="{outer["x"]:.1f}" y="{outer["y"]+4:.1f}" fill="rgba(255,255,255,0.85)" font-size="9" font-family="monospace" font-weight="bold" text-anchor="{text_anchor}">{labels[i]}({int(values[i])})</text>\n'
+        
+    radar_svg = f"""<svg width="320" height="250" viewBox="0 0 320 250" style="background:#070712; border:1px solid rgba(255,255,255,0.08); border-radius:12px;">
+  <defs>
+    <radialGradient id="radarGlow_md" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#10b981" stop-opacity="0.4" />
+      <stop offset="100%" stop-color="#047857" stop-opacity="0.0" />
+    </radialGradient>
+  </defs>
+{grid_polygons}
+{axis_lines}
+  <polygon points="{pts_str}" fill="url(#radarGlow_md)" stroke="#10b981" stroke-width="2" />
+{dots}
+{labels_markup}
+</svg>"""
+
+    # 2. Monte Carlo Probability Wave SVG
+    dist = stats["fcf_model"]["distribution"]
+    counts = [d["count"] for d in dist]
+    max_count = max(counts) if counts else 1
+    
+    w_width, h_height, p_pad = 300, 150, 15
+    
+    def scale_y(count):
+        g_h = h_height - p_pad * 2
+        return h_height - p_pad - (count / max_count) * g_h
+        
+    def scale_x(idx):
+        g_w = w_width - p_pad * 2
+        return p_pad + (idx / (len(dist) - 1)) * g_w
+        
+    wave_pts = [{"x": scale_x(i), "y": scale_y(d["count"])} for i, d in enumerate(dist)]
+    
+    path_str = f"M {wave_pts[0]['x']:.1f} {h_height - p_pad:.1f} "
+    for p in wave_pts:
+        path_str += f"L {p['x']:.1f} {p['y']:.1f} "
+    path_str += f"L {wave_pts[-1]['x']:.1f} {h_height - p_pad:.1f} Z"
+    
+    line_str = f"M {wave_pts[0]['x']:.1f} {wave_pts[0]['y']:.1f} "
+    for p in wave_pts:
+        line_str += f"L {p['x']:.1f} {p['y']:.1f} "
+        
+    curr_price = stats.get("current_price", 100.0)
+    mean_val = stats["fcf_model"]["mean"]
+    p25_val = stats["fcf_model"]["p25"]
+    
+    min_bin = dist[0]["bin_start"]
+    max_bin = dist[-1]["bin_end"]
+    bin_range = max_bin - min_bin if max_bin - min_bin > 0 else 1
+    
+    def get_x_of_val(val):
+        pct = (val - min_bin) / bin_range
+        g_w = w_width - p_pad * 2
+        v_pct = min(1.0, max(0.0, pct))
+        return p_pad + v_pct * g_w
+        
+    cur_x = get_x_of_val(curr_price)
+    mean_x = get_x_of_val(mean_val)
+    p25_x = get_x_of_val(p25_val)
+    
+    dist_svg = f"""<svg width="300" height="150" viewBox="0 0 300 150" style="background:#070712; border:1px solid rgba(255,255,255,0.08); border-radius:12px;">
+  <defs>
+    <linearGradient id="distGrad_md" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#06b6d4" stop-opacity="0.4" />
+      <stop offset="100%" stop-color="#0891b2" stop-opacity="0.0" />
+    </linearGradient>
+    <linearGradient id="colorBarGrad_md" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#f87171" stop-opacity="0.85" />
+      <stop offset="50%" stop-color="#fbbf24" stop-opacity="0.85" />
+      <stop offset="100%" stop-color="#34d399" stop-opacity="0.85" />
+    </linearGradient>
+  </defs>
+  <path d="{path_str}" fill="url(#distGrad_md)" />
+  <path d="{line_str}" fill="none" stroke="#06b6d4" stroke-width="2" />
+  
+  <rect x="{p_pad}" y="{h_height - p_pad - 1.5}" width="{w_width - p_pad * 2}" height="3" rx="1.5" fill="url(#colorBarGrad_md)" />
+  
+  <line x1="{cur_x:.1f}" y1="{p_pad}" x2="{cur_x:.1f}" y2="{h_height - p_pad}" stroke="#fbbf24" stroke-width="1.5" stroke-dasharray="2,2" />
+  <line x1="{mean_x:.1f}" y1="{p_pad}" x2="{mean_x:.1f}" y2="{h_height - p_pad}" stroke="#34d399" stroke-width="1.5" stroke-dasharray="2,2" />
+  <line x1="{p25_x:.1f}" y1="{p_pad}" x2="{p25_x:.1f}" y2="{h_height - p_pad}" stroke="#f87171" stroke-width="1.5" stroke-dasharray="2,2" />
+</svg>"""
+
+    visualizations_html = f"""<div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 20px; margin: 25px 0; background: rgba(255,255,255,0.01); border: 1px solid rgba(255,255,255,0.04); padding: 15px; border-radius: 16px;">
+  <div style="text-align: center;">
+    <h4 style="margin: 0 0 8px 0; color: #10b981; font-family: monospace; font-size: 11px; text-transform: uppercase; letter-spacing: 1px;">🎯 Fundamental Radar</h4>
+    {radar_svg}
+  </div>
+  <div style="text-align: center;">
+    <h4 style="margin: 0 0 8px 0; color: #06b6d4; font-family: monospace; font-size: 11px; text-transform: uppercase; letter-spacing: 1px;">📈 Monte Carlo Distribution</h4>
+    {dist_svg}
+    <div style="display: grid; grid-template-cols: repeat(3, 1sfr); gap: 5px; font-size: 8px; font-family: monospace; color: #94a3b8; margin-top: 6px;">
+      <div><span style="color: #f87171; font-weight: bold;">P25:</span> ${p25_val}</div>
+      <div><span style="color: #fbbf24; font-weight: bold;">現價:</span> ${curr_price}</div>
+      <div><span style="color: #34d399; font-weight: bold;">期望:</span> ${mean_val}</div>
+    </div>
+  </div>
+</div>"""
+    # Strip all newlines from inline HTML to prevent Markdown parser from stripping SVG text tags
+    visualizations_html = visualizations_html.replace("\n", " ")
+
+    report_date = datetime.now().strftime("%Y-%m-%d")
+
+    # Section IV: SEC Filings Table
+    sec_rows = ""
+    if stats.get("sec_filings"):
+        for f in stats["sec_filings"]:
+            url_markdown = f"[閱讀 Edgar 檔案]({f['url']})" if f['url'] else "無連結"
+            sec_rows += f"| {f['date']} | **{f['type']}** | {f['title']} | {url_markdown} |\n"
+    else:
+        sec_rows = "| - | - | 暫無最新 SEC 申報檔案 | - |\n"
+
+    # Section V: Insider Trades Table
+    insider_rows = ""
+    if stats.get("insider_trades"):
+        for t in stats["insider_trades"]:
+            val_str = f"${t['value']:,.0f}" if t['value'] > 0 else "-"
+            shares_str = f"{t['shares']:,}" if t['shares'] > 0 else "-"
+            insider_rows += f"| {t['date']} | **{t['insider']}** | {t['position']} | {t['transaction']} | {shares_str} | {val_str} |\n"
+    else:
+        insider_rows = "| - | - | - | 暫無最新內部人交易紀錄 | - | - |\n"
+
+    # Section VI: News Summary List
+    news_list = ""
+    if stats.get("news_summary"):
+        # Calculate sentiment distribution
+        bullish_count = sum(1 for n in stats.get("news_summary", []) if n.get("sentiment") == "BULLISH")
+        bearish_count = sum(1 for n in stats.get("news_summary", []) if n.get("sentiment") == "BEARISH")
+        neutral_count = sum(1 for n in stats.get("news_summary", []) if n.get("sentiment") == "NEUTRAL")
+        total_news = len(stats.get("news_summary", [])) or 1
+        
+        bull_pct = (bullish_count / total_news) * 100
+        bear_pct = (bearish_count / total_news) * 100
+        neu_pct = (neutral_count / total_news) * 100
+        
+        distribution_html = f"""<div style="display: flex; height: 8px; border-radius: 4px; overflow: hidden; margin: 12px 0 16px 0; background: #1a1a2e;">
+  <div style="width: {bull_pct}%; background: #10b981;" title="多頭 (Bullish)"></div>
+  <div style="width: {neu_pct}%; background: #64748b;" title="中性 (Neutral)"></div>
+  <div style="width: {bear_pct}%; background: #ef4444;" title="空頭 (Bearish)"></div>
+</div>
+<div style="display: flex; justify-content: space-between; font-size: 10px; font-family: monospace; color: #94a3b8; margin-bottom: 20px;">
+  <span style="color: #10b981; font-weight: bold;">🟢 多頭: {bullish_count} 筆 ({bull_pct:.1f}%)</span>
+  <span style="color: #94a3b8; font-weight: bold;">⚪ 中性: {neutral_count} 筆 ({neu_pct:.1f}%)</span>
+  <span style="color: #ef4444; font-weight: bold;">🔴 空頭: {bearish_count} 筆 ({bear_pct:.1f}%)</span>
+</div>""".replace("\n", " ")
+        
+        news_list += distribution_html + "\n\n"
+        
+        for n in stats["news_summary"]:
+            translated = n.get("title_translated") or n.get("title", "")
+            original = n.get("title", "")
+            sentiment = n.get("sentiment", "NEUTRAL").upper()
+            reason = n.get("reason", "中性輿情")
+            
+            if translated and translated != original:
+                display_text = f"**{translated}** ( *{original}* )"
+            else:
+                display_text = f"**{original}**"
+                
+            title_link = f"[{display_text}]({n['link']})" if n['link'] else display_text
+            pub_info = f"*{n['publisher']}* ({n['date']})" if n['publisher'] else f"({n['date']})"
+            
+            # Formulate sentiment tag
+            if sentiment == "BULLISH":
+                tag = '<span style="color:#10b981; font-weight:bold; background:rgba(16,185,129,0.1); padding:2px 6px; border-radius:4px; border:1px solid rgba(16,185,129,0.2); font-size:9px; margin-right:6px;">📈 多頭 BULLISH</span>'
+            elif sentiment == "BEARISH":
+                tag = '<span style="color:#ef4444; font-weight:bold; background:rgba(239,68,68,0.1); padding:2px 6px; border-radius:4px; border:1px solid rgba(239,68,68,0.2); font-size:9px; margin-right:6px;">📉 空頭 BEARISH</span>'
+            else:
+                tag = '<span style="color:#94a3b8; font-weight:bold; background:rgba(148,163,184,0.1); padding:2px 6px; border-radius:4px; border:1px solid rgba(148,163,184,0.2); font-size:9px; margin-right:6px;">⚪ 中性 NEUTRAL</span>'
+                
+            news_list += f"* 📰 {tag} {title_link} — {pub_info}\n  > 💡 **AI 輿情解析**: *{reason}*\n\n"
+    else:
+        news_list = "* 暫無最新市場新聞報導。"
+
+    # Call LLM to generate AI analysis report section
+    ai_analysis_section = _generate_ai_highlights(stats)
+
+    md = f"""---
+ticker: {ticker}
+type: finance_analysis
+date: {report_date}
+current_price: {stats['current_price']}
+valuation_fcf: {stats['fcf_model']['mean']}
+valuation_earnings: {stats['earnings_model']['mean']}
+recommendation: {rating}
+---
+
+# {ticker} 深度研究與雙軌蒙地卡羅估值報告
+
+> **報告發布時間**：{report_date}
+> **分析標的**：{ticker}
+> **當前市場收盤價**：${stats['current_price']:.2f}
+> **研究框架**：不確定性雙軌隨機模擬估值（Stochastic Hybrid Valuation）
+
+{visualizations_html}
+
+---
+
+## 一、 執行摘要與投資論點 (Executive Summary & Investment Thesis)
+
+本報告針對 {ticker} 進行了全方位的財務審計與 10,000 次蒙地卡羅隨機估值模擬。藉由結合其資本開支特徵與真實營運收益能力，確立其價值中樞與安全邊際。
+
+### 📌 關鍵投資事實與指標摘要 (Key Investment Facts & Metrics Bulletin)：
+* **🎯 綜合投資評等**：**{rating}**
+* **💎 雙軌價值中樞 (Consensus Fair Value Range)**：
+  - 🏦 **自由現金流折現地板 (FCF Model Mean)**：**${stats['fcf_model']['mean']}** (期望空間: {stats['fcf_model']['upside_pct']:+.2f}%) —— 代表極端保守、扣除全額資本支出下的資產價值地板。
+  - 📈 **常態獲利貼現中樞 (Earnings Model Mean)**：**${stats['earnings_model']['mean']}** (期望空間: {stats['earnings_model']['upside_pct']:+.2f}%) —— 更加貼近常態商業營運的權益回報。
+* **💰 核心營運與資產實力 (Annual Run-Rate & Balance Sheet)**：
+  - **年化自由現金流 (Annual FCF Base)**：**${stats['fcf_base']/1e6:.1f}M**
+  - **年化淨利潤 (Annual Net Income Base)**：**${stats['earnings_base']/1e6:.1f}M**
+  - **淨債務狀況 (Net Debt Position)**：**${stats['net_debt']/1e6:.1f}M** (帳上現金 `${stats['cash']/1e6:.1f}M` vs 總債務 `${stats['debt']/1e6:.1f}M`)
+* **⚡ 經營效率與市場波動度 (Operational Efficiency & Beta)**：
+  - **股東權益報酬率 (ROE)**：**{roe_pct}** (衡量資金回報效率的核心指標)
+  - **核心業務淨利率 (Profit Margin)**：**{margin_pct}**
+  - **市場風險係數 (Beta)**：**{stats.get('beta', 1.0):.2f}** (代表股價相較大盤的波動與風險特徵)
+* **🛡️ 建議安全邊際吸收價位 (Safety Margin Target - P25)**：
+  - 建議於 FCF 折現模型的 P25 分位價位 **${stats['fcf_model']['p25']}** 以下逢低分批吸納，此價位具備極高的中長期抗跌防守價值。
+
+---
+
+## 二、 🤖 AI 財報亮點與風險剖析 (AI Financial Highlights & Risks)
+
+{ai_analysis_section}
+
+---
+
+## 三、 財務健康狀況審計 (Fundamental Financial Health Audit)
+
+根據最新的市場基礎數據，{ticker} 的財務指標摘要如下：
+
+| 財務維度 | 關鍵指標 | 數值 | 診斷與評估 |
+| :--- | :--- | :--- | :--- |
+| **估值比率** | Trailing P/E | **{pe_trailing}** | 歷史本益比倍數。 |
+| | Forward P/E | **{pe_forward}** | 預期本益比。 |
+| | Price-to-Book (P/B)| **{pb_ratio}** | 股價淨值比。 |
+| | PEG Ratio | **{peg_ratio}** | 市盈成長比。 |
+| **獲利能力** | **ROE (股東權益報酬率)** | **{roe_pct}** | 資金回報率表現。 |
+| | **Profit Margin (淨利率)**| **{margin_pct}** | 核心業務盈利溢價能力。 |
+| **流動性與債務** | Current Ratio (流動比率)| **{curr_ratio}** | 短期償債防守指標。 |
+| | Debt-to-Equity (債務權益比)| **{debt_eq_val}** | 長期財務槓桿健康度。 |
+| | **淨債務狀況** | **${stats['net_debt']/1e6:.1f}M** | 總負債減去現金餘額。 |
+
+---
+
+## 四、 雙軌蒙地卡羅隨機模擬估值 (Double-Track Monte Carlo Valuation)
+
+為避免傳統單一 DCF 模型因重資本開支（Deposition CapEx） or 研發再投資（R&D Reinvestment）而扭曲價值，本系統特別對其進行了雙軌 10,000 次隨機估值推演。
+
+### 📊 估值模型動態隨機變數假設 (Stochastic Model Assumptions)：
+本報告的蒙地卡羅模擬參數並非採用固定死板的硬編碼，而是**根據個股最新的實際市場風險波動度 (Beta) 與成長動能 (Historical Growth Rates) 進行動態智能估算**：
+* 🏦 **動態加權平均資本成本 (Estimated WACC)**：期望值為 **{stats.get('est_wacc', 0.085)*100:.2f}%** (基於市場系統性風險係數 Beta = **{stats.get('beta', 1.0):.2f}** 與 CAPM 資本定價模型動態推算)
+* 📈 **第一階段高增長率 (Stage 1 Growth, 1-5年)**：期望值為 **{stats.get('est_growth_g1', 0.14)*100:.2f}%** (基於最新歷史營收/盈餘增長動能動態推算)
+* 📉 **第二階段過渡增長率 (Stage 2 Growth, 6-10年)**：期望值為 **{stats.get('est_growth_g2', 0.08)*100:.2f}%** (動態衰退)
+* 🌐 **終值永續增長率 (Perpetual Growth Rate)**：期望值為 **{stats.get('est_growth_perp', 0.025)*100:.2f}%**
+
+### 10,000 次隨機模擬估值統計結果：
+
+| 統計分位數 | FCF 折現模型 (保守現金流地板) | Earnings 折現模型 (常態盈利天花板) |
+| :--- | :---: | :---: |
+| **P10 (極度保守熊市)** | ${stats['fcf_model']['p10']} | ${stats['earnings_model']['p10']} |
+| **P25 (保守安全邊際)** | ${stats['fcf_model']['p25']} | ${stats['earnings_model']['p25']} |
+| **P50 (中位數估值)** | ${stats['fcf_model']['median']} | ${stats['earnings_model']['median']} |
+| **Mean (期望內在價值)** | **${stats['fcf_model']['mean']}** | **${stats['earnings_model']['mean']}** |
+| **P75 (溫和牛市目標)** | ${stats['fcf_model']['p75']} | ${stats['earnings_model']['p75']} |
+| **P90 (樂觀牛市目標)** | ${stats['fcf_model']['p90']} | ${stats['earnings_model']['p90']} |
+| **當前收盤價 ${stats['current_price']:.2f} 期望空間** | **{stats['fcf_model']['upside_pct']:+.2f}%** | **{stats['earnings_model']['upside_pct']:+.2f}%** |
+
+### 估值結論與操作建議：
+* **保守現金流地板 (FCF Model)**：展示了在最壞、全額核銷資本支出且不轉換為盈利的條件下，公司最低的清算/現金流價值支撐。
+* **常態獲利天花板 (Earnings Model)**：更能代表其結構性收益回報，是中長期合理目標價的指引中樞。
+* **操作策略**：建議於安全邊際 P25 以下分批吸納，並以 Mean 作為第一中線目標。
+
+---
+
+## 五、 最新 SEC 重要申報檔案 (Latest SEC Filings)
+
+以下是近期該公司向美國證券交易委員會 (SEC) 申報的最新 6 筆檔案明細：
+
+| 申報日期 | 檔案類型 | 檔案主題與摘要描述 | 線上閱讀連結 |
+| :--- | :--- | :--- | :--- |
+{sec_rows}
+---
+
+## 六、 最新內部人交易紀錄 (Insider Transactions)
+
+以下是近期公司內部大股東、董事與高階經理人 (Insiders) 的持股交易與變動明細：
+
+| 交易日期 | 內部人姓名 | 職位 | 交易類型 | 交易股數 | 交易價值 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+{insider_rows}
+---
+
+## 七、 最新新聞動態與輿情分析 (Latest News & Sentiment Analysis)
+
+以下是該股在各大財經媒體與市場所關注的最新重要動向與多空輿情：
+
+{news_list}
+"""
+    return md
+
+@app.get("/api/finance-analysis/reports")
+async def get_reports_list(ticker: str):
+    """Scan and list all Obsidian reports for a specific ticker."""
+    ticker = ticker.upper().strip()
+    reports = []
+    if os.path.exists(OBSIDIAN_DIR):
+        for f in os.listdir(OBSIDIAN_DIR):
+            if f.startswith(f"{ticker}_finance_analysis_report_") and f.endswith(".md"):
+                # Extract datetime from name like TSLA_finance_analysis_report_20260509_125500.md
+                parts = f.replace(".md", "").split("_")
+                dt_str = "N/A"
+                if len(parts) >= 6:
+                    date_part, time_part = parts[-2], parts[-1]
+                    if len(date_part) == 8 and len(time_part) == 6:
+                        dt_str = f"{date_part[0:4]}-{date_part[4:6]}-{date_part[6:8]} {time_part[0:2]}:{time_part[2:4]}:{time_part[4:6]}"
+                reports.append({
+                    "filename": f,
+                    "datetime": dt_str,
+                    "path": os.path.join(OBSIDIAN_DIR, f)
+                })
+    # Sort descending by filename / date
+    reports.sort(key=lambda x: x["filename"], reverse=True)
+    return {"success": True, "data": reports}
+
+@app.get("/api/finance-analysis/report-content")
+async def get_report_content(filename: str):
+    """Read and return content of a specific Obsidian report."""
+    safe_name = os.path.basename(filename)
+    path = os.path.join(OBSIDIAN_DIR, safe_name)
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="Report not found")
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            content = f.read()
+        return {"success": True, "content": content}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read report: {e}")
+
+class GenerateReportRequest(BaseModel):
+    ticker: str
+
+@app.post("/api/finance-analysis/generate")
+async def generate_report(req: GenerateReportRequest):
+    """Run generalized Monte Carlo simulation and compile premium report to Obsidian."""
+    ticker = req.ticker.upper().strip()
+    if not ticker:
+        raise HTTPException(status_code=400, detail="Invalid ticker provided")
+    try:
+        # Run 10k simulations
+        stats = _run_monte_carlo(ticker)
+        # Build markdown content
+        md_content = _generate_markdown_report(stats)
+        
+        # Save to Obsidian folder
+        from datetime import datetime
+        dt_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+        os.makedirs(OBSIDIAN_DIR, exist_ok=True)
+        filename = f"{ticker}_finance_analysis_report_{dt_str}.md"
+        path = os.path.join(OBSIDIAN_DIR, filename)
+        
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(md_content)
+            
+        return {
+            "success": True,
+            "filename": filename,
+            "path": path,
+            "markdown": md_content,
+            "stats": stats
+        }
+    except Exception as e:
+        logger.exception(f"Failed to generate Monte Carlo report for {ticker}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/chart", response_class=HTMLResponse)
+async def get_chart_html(
+    ticker: str = Query(..., description="The ticker symbol, e.g. TSLA, NVDA"),
+    period: str = "1y",
+    interval: str = "1d",
+    indicators: str = "ma,macd,rsi,bb,vol",
+    backtest_strategy: str = Query(None),
+    backtest_fast: float = Query(None),
+    backtest_slow: float = Query(None)
+):
+    """Generates an interactive HTML Technical chart using Lightweight Charts."""
+    try:
+        import numpy as np
+        import pandas as pd
+    except ImportError as e:
+        return f"<html><body style='background:#0a0a0f;color:#e0e0e0;padding:20px;font-family:sans-serif;'><h3>Missing system dependencies: {e}</h3><p>Please make sure numpy and pandas are installed in your environment.</p></body></html>"
+
+    try:
+        import talib
+        has_talib = True
+    except ImportError:
+        has_talib = False
+
+    indicator_set = set(i.strip().lower() for i in indicators.split(","))
+    df = None
+    data_source = None
+    host = "127.0.0.1"
+    port = 11111
+
+    # 1. Fetch data
+    # For long-term historical data, prefer Yahoo Finance directly as Futu OpenD has strict history length/quota limits for standard accounts
+    if _is_futu_opend_running(host, port) and period not in ["5y", "10y", "max"]:
+        try:
+            from moomoo import OpenQuoteContext, KLType
+            period_days_map = {
+                "1mo": 30,
+                "3mo": 90,
+                "6mo": 180,
+                "1y": 365,
+                "2y": 730,
+                "5y": 1825,
+                "10y": 3650,
+                "max": 7300
+            }
+            days = period_days_map.get(period, 365)
+            start_date = (pd.Timestamp.now() - pd.DateOffset(days=days)).strftime("%Y-%m-%d")
+            moo_code = _get_moomoo_code(ticker)
+            ktype_map = {"1d": KLType.K_DAY, "1wk": KLType.K_WEEK, "1mo": KLType.K_MON}
+            ktype = ktype_map.get(interval, KLType.K_DAY)
+
+            quote_ctx = OpenQuoteContext(host=host, port=port)
+            ret, data, _ = quote_ctx.request_history_kline(moo_code, start=start_date, ktype=ktype)
+            quote_ctx.close()
+
+            if ret == 0 and data is not None and not data.empty:
+                data["datetime"] = pd.to_datetime(data["time_key"])
+                data.set_index("datetime", inplace=True)
+                df = data[["open", "high", "low", "close", "volume"]].copy()
+                df.columns = ["Open", "High", "Low", "Close", "Volume"]
+                data_source = "Moomoo"
+        except Exception as e:
+            logger.info(f"Moomoo chart data fetch failed, falling back: {e}")
+
+    if df is None:
+        try:
+            import yfinance as yf
+            clean_ticker = ticker.replace("US.", "").replace("HK.", "") if "." in ticker else ticker
+            raw = yf.download(clean_ticker, period=period, interval=interval, progress=False)
+            if raw is not None and not raw.empty:
+                df = raw[["Open", "High", "Low", "Close", "Volume"]].copy()
+                if isinstance(df.columns, pd.MultiIndex):
+                    df.columns = df.columns.get_level_values(0)
+                data_source = "Yahoo Finance"
+        except Exception as e:
+            return f"<html><body style='background:#0a0a0f;color:#e0e0e0;padding:20px;font-family:sans-serif;'><h3>Failed to load chart data for {ticker}</h3><p>{e}</p></body></html>"
+
+    if df is None or df.empty:
+        return f"<html><body style='background:#0a0a0f;color:#e0e0e0;padding:20px;font-family:sans-serif;'><h3>No data available for ticker: {ticker}</h3></body></html>"
+
+    for col in ["Open", "High", "Low", "Close", "Volume"]:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+    df.dropna(inplace=True)
+
+    if len(df) < 20:
+        return f"<html><body style='background:#0a0a0f;color:#e0e0e0;padding:20px;font-family:sans-serif;'><h3>Not enough K-line data available ({len(df)} bars found, minimum 20 needed)</h3></body></html>"
+
+    # 2. Indicators Calculation
+    close = np.array(df["Close"], dtype="float64")
+    def ts(dt):
+        return int(dt.timestamp())
+
+    candle_data = []
+    vol_data = []
+    for idx, row in df.iterrows():
+        t = ts(idx)
+        candle_data.append({"time": t, "open": round(row["Open"], 2),
+                            "high": round(row["High"], 2), "low": round(row["Low"], 2),
+                            "close": round(row["Close"], 2)})
+        color = "#EF5350" if row["Close"] >= row["Open"] else "#26A69A"
+        vol_data.append({"time": t, "value": int(row["Volume"]), "color": color})
+
+    ma20_data, ma81_data = [], []
+    if "ma" in indicator_set:
+        if len(close) >= 20:
+            if has_talib:
+                ma20 = talib.SMA(close, timeperiod=20)
+            else:
+                ma20 = df["Close"].rolling(window=20).mean().values
+            ma20_data = [{"time": ts(df.index[i]), "value": round(float(ma20[i]), 2)}
+                         for i in range(len(df)) if not np.isnan(ma20[i])]
+        if len(close) >= 81:
+            if has_talib:
+                ma81 = talib.SMA(close, timeperiod=81)
+            else:
+                ma81 = df["Close"].rolling(window=81).mean().values
+            ma81_data = [{"time": ts(df.index[i]), "value": round(float(ma81[i]), 2)}
+                         for i in range(len(df)) if not np.isnan(ma81[i])]
+
+    bb_upper_data, bb_lower_data = [], []
+    if "bb" in indicator_set and len(close) >= 20:
+        if has_talib:
+            bb_upper, _, bb_lower = talib.BBANDS(close, timeperiod=20, nbdevup=2, nbdevdn=2)
+        else:
+            mid = df["Close"].rolling(window=20).mean()
+            std = df["Close"].rolling(window=20).std()
+            bb_upper = (mid + 2 * std).values
+            bb_lower = (mid - 2 * std).values
+        for i in range(len(df)):
+            if not np.isnan(bb_upper[i]):
+                t = ts(df.index[i])
+                bb_upper_data.append({"time": t, "value": round(float(bb_upper[i]), 2)})
+                bb_lower_data.append({"time": t, "value": round(float(bb_lower[i]), 2)})
+
+    macd_data, signal_data, hist_data = [], [], []
+    if "macd" in indicator_set and len(close) >= 26:
+        if has_talib:
+            macd_line, signal_line, macd_hist = talib.MACD(close, fastperiod=12, slowperiod=26, signalperiod=9)
+        else:
+            ema12 = df["Close"].ewm(span=12, adjust=False).mean()
+            ema26 = df["Close"].ewm(span=26, adjust=False).mean()
+            macd_line = (ema12 - ema26).values
+            signal_line = pd.Series(macd_line).ewm(span=9, adjust=False).mean().values
+            macd_hist = macd_line - signal_line
+        for i in range(len(df)):
+            if not np.isnan(macd_line[i]):
+                t = ts(df.index[i])
+                macd_data.append({"time": t, "value": round(float(macd_line[i]), 4)})
+                signal_data.append({"time": t, "value": round(float(signal_line[i]), 4)})
+                color = "#EF5350" if macd_hist[i] >= 0 else "#26A69A"
+                hist_data.append({"time": t, "value": round(float(macd_hist[i]), 4), "color": color})
+
+    rsi_data = []
+    if "rsi" in indicator_set and len(close) >= 14:
+        if has_talib:
+            rsi = talib.RSI(close, timeperiod=14)
+        else:
+            delta = df["Close"].diff()
+            gain = (delta.where(delta > 0, 0)).ewm(alpha=1/14, adjust=False).mean()
+            loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/14, adjust=False).mean()
+            rs = gain / loss
+            rsi = (100 - (100 / (1 + rs))).values
+        rsi_data = [{"time": ts(df.index[i]), "value": round(float(rsi[i]), 2)}
+                    for i in range(len(df)) if not np.isnan(rsi[i])]
+
+    markers = []
+    if backtest_strategy:
+        bt_res = _run_backtest(df, backtest_strategy, backtest_fast, backtest_slow)
+        # map dates to timestamps
+        date_to_ts = {df.index[i].strftime("%Y-%m-%d"): ts(df.index[i]) for i in range(len(df))}
+        for trade in bt_res.get("trades", []):
+            b_date = trade.get("buy_date")
+            s_date = trade.get("sell_date")
+            b_px = trade.get("buy_price")
+            s_px = trade.get("sell_price")
+            
+            if b_date in date_to_ts:
+                markers.append({
+                    "time": date_to_ts[b_date],
+                    "position": "belowBar",
+                    "color": "#10b981",
+                    "shape": "arrowUp",
+                    "text": f"買入 ${b_px:.2f}"
+                })
+            if s_date in date_to_ts:
+                markers.append({
+                    "time": date_to_ts[s_date],
+                    "position": "aboveBar",
+                    "color": "#ef4444",
+                    "shape": "arrowDown",
+                    "text": f"賣出 ${s_px:.2f}"
+                })
+        markers.sort(key=lambda x: x["time"])
+
+    display_ticker = ticker.replace("US.", "").replace("HK.", "") if "." in ticker else ticker
+    last_price = float(df["Close"].iloc[-1])
+    change_pct = (df["Close"].iloc[-1] / df["Close"].iloc[-2] - 1) * 100 if len(df) >= 2 else 0
+    change_color = "#EF5350" if change_pct >= 0 else "#26A69A"
+
+    # 3. Formulate HTML Output
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{display_ticker} — Interactive Chart</title>
+<script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+* {{ margin:0; padding:0; box-sizing:border-box; }}
+body {{ background:#07070a; color:#e0e0e0; font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Inter',sans-serif; overflow-x:hidden; }}
+.hdr {{
+  padding:10px 18px; display:flex; align-items:baseline; gap:12px;
+  background:linear-gradient(135deg,#0d0d14,#121220); border-bottom:1px solid #1f1f2e;
+}}
+.hdr h1 {{ font-size:18px; font-weight:700; color:#fff; }}
+.hdr .px {{ font-size:17px; font-weight:600; color:{change_color}; }}
+.hdr .ch {{ font-size:13px; color:{change_color}; }}
+.hdr .src {{ font-size:11px; color:#555; margin-left:auto; }}
+.lbl {{
+  padding:2px 18px; font-size:9px; color:#555; background:#07070a;
+  border-top:1px solid #1a1a2e; text-transform:uppercase; letter-spacing:1px;
+}}
+.legend {{
+  position:absolute; top:6px; left:12px; z-index:10; font-size:10px; color:#666; pointer-events:none;
+}}
+.legend span {{ margin-right:10px; }}
+</style>
+</head>
+<body>
+<div class="hdr">
+  <h1>{display_ticker}</h1>
+  <span class="px">${last_price:.2f}</span>
+  <span class="ch">({change_pct:+.2f}%)</span>
+  <span class="src">{data_source} · {period.upper()} · {interval}</span>
+</div>
+
+<div style="position:relative">
+  <div class="legend">
+    {('<span style="color:#2196F3">━ MA20</span>' if ma20_data else '')}
+    {('<span style="color:#FF9800">━ MA81</span>' if ma81_data else '')}
+    {('<span style="color:#9E9E9E">┈ BB(20,2)</span>' if bb_upper_data else '')}
+  </div>
+  <div id="main"></div>
+</div>
+{"<div class='lbl'>Volume</div><div id='vol'></div>" if "vol" in indicator_set else ""}
+{"<div class='lbl'>MACD (12, 26, 9)</div><div id='macd'></div>" if macd_data else ""}
+{"<div class='lbl'>RSI (14)</div><div id='rsi'></div>" if rsi_data else ""}
+
+<script>
+const D = {{
+  candle: {json.dumps(candle_data)},
+  vol: {json.dumps(vol_data)},
+  ma20: {json.dumps(ma20_data)},
+  ma81: {json.dumps(ma81_data)},
+  bbU: {json.dumps(bb_upper_data)},
+  bbL: {json.dumps(bb_lower_data)},
+  macd: {json.dumps(macd_data)},
+  sig: {json.dumps(signal_data)},
+  hist: {json.dumps(hist_data)},
+  rsi: {json.dumps(rsi_data)},
+  markers: {json.dumps(markers)},
+}};
+
+const base = {{
+  layout:{{ background:{{ type:'solid', color:'#07070a' }}, textColor:'#888' }},
+  grid:{{ vertLines:{{ color:'#121220' }}, horzLines:{{ color:'#121220' }} }},
+  crosshair:{{ mode: LightweightCharts.CrosshairMode.Normal }},
+  timeScale:{{ borderColor:'#1f1f2e', timeVisible:false }},
+  rightPriceScale:{{ borderColor:'#1f1f2e' }},
+}};
+
+function mk(id, h) {{
+  const el = document.getElementById(id);
+  if (!el) return null;
+  el.style.height = h + 'px';
+  return LightweightCharts.createChart(el, {{ ...base, height: h }});
+}}
+
+const charts = [];
+
+// Main Candlestick Chart (Asian Style: Red-Up, Green-Down)
+const mainH = Math.max(window.innerHeight * 0.42, 260);
+const mc = mk('main', mainH);
+if (mc) {{
+  const cs = mc.addCandlestickSeries({{
+    upColor:'#EF5350', downColor:'#26A69A',
+    borderUpColor:'#EF5350', borderDownColor:'#26A69A',
+    wickUpColor:'#EF5350', wickDownColor:'#26A69A',
+  }});
+  cs.setData(D.candle);
+  if (D.markers && D.markers.length) {{
+    cs.setMarkers(D.markers);
+  }}
+  if (D.ma20.length) {{ const s=mc.addLineSeries({{color:'#2196F3',lineWidth:1,priceLineVisible:false,lastValueVisible:false}}); s.setData(D.ma20); }}
+  if (D.ma81.length) {{ const s=mc.addLineSeries({{color:'#FF9800',lineWidth:1.5,priceLineVisible:false,lastValueVisible:false}}); s.setData(D.ma81); }}
+  if (D.bbU.length) {{
+    const u=mc.addLineSeries({{color:'#9E9E9E',lineWidth:0.6,lineStyle:2,priceLineVisible:false,lastValueVisible:false}}); u.setData(D.bbU);
+    const l=mc.addLineSeries({{color:'#9E9E9E',lineWidth:0.6,lineStyle:2,priceLineVisible:false,lastValueVisible:false}}); l.setData(D.bbL);
+  }}
+  mc.timeScale().fitContent();
+  charts.push(mc);
+}}
+
+// Volume Chart
+if (D.vol.length) {{
+  const vc = mk('vol', 65);
+  if (vc) {{
+    const vs = vc.addHistogramSeries({{priceFormat:{{type:'volume'}},priceLineVisible:false,lastValueVisible:false}});
+    vs.setData(D.vol);
+    vc.timeScale().fitContent();
+    charts.push(vc);
+  }}
+}}
+
+// MACD Chart
+if (D.macd.length) {{
+  const mcc = mk('macd', 95);
+  if (mcc) {{
+    const ml=mcc.addLineSeries({{color:'#2196F3',lineWidth:1,priceLineVisible:false,lastValueVisible:false}}); ml.setData(D.macd);
+    const sl=mcc.addLineSeries({{color:'#FF9800',lineWidth:1,priceLineVisible:false,lastValueVisible:false}}); sl.setData(D.sig);
+    const hs=mcc.addHistogramSeries({{priceLineVisible:false,lastValueVisible:false}}); hs.setData(D.hist);
+    const zl=mcc.addLineSeries({{color:'#333',lineWidth:0.5,lineStyle:2,priceLineVisible:false,lastValueVisible:false}});
+    zl.setData(D.macd.map(d=>({{time:d.time,value:0}})));
+    mcc.timeScale().fitContent();
+    charts.push(mcc);
+  }}
+}}
+
+// RSI Chart
+if (D.rsi.length) {{
+  const rc = mk('rsi', 80);
+  if (rc) {{
+    const rl=rc.addLineSeries({{color:'#AB47BC',lineWidth:1,priceLineVisible:false,lastValueVisible:false}}); rl.setData(D.rsi);
+    const ob=rc.addLineSeries({{color:'#EF5350',lineWidth:0.5,lineStyle:2,priceLineVisible:false,lastValueVisible:false}});
+    ob.setData(D.rsi.map(d=>({{time:d.time,value:70}})));
+    const os=rc.addLineSeries({{color:'#26A69A',lineWidth:0.5,lineStyle:2,priceLineVisible:false,lastValueVisible:false}});
+    os.setData(D.rsi.map(d=>({{time:d.time,value:30}})));
+    rc.timeScale().fitContent();
+    charts.push(rc);
+  }}
+}}
+
+// Sync Logic
+let syncing = false;
+charts.forEach(c => {{
+  c.timeScale().subscribeVisibleLogicalRangeChange(r => {{
+    if (syncing || !r) return;
+    syncing = true;
+    charts.forEach(o => {{ if (o !== c) o.timeScale().setVisibleLogicalRange(r); }});
+    syncing = false;
+  }});
+}});
+
+window.addEventListener('resize', () => {{
+  const w = window.innerWidth;
+  charts.forEach(c => c.applyOptions({{ width: w }}));
+}});
+</script>
+</body>
+</html>"""
+    return html
+
+# ─── BACKTESTING & AI COPILOT APIS ───
+
+class BacktestRequest(BaseModel):
+    ticker: str
+    strategy: str
+    param_fast: float
+    param_slow: float
+    period: str = "1y"
+
+def _run_backtest(df, strategy_name, param_fast, param_slow, initial_capital=100000.0):
+    import numpy as np
+    import pandas as pd
+    
+    close = df["Close"].values
+    signals = []
+    
+    if strategy_name == "SMA_Crossover":
+        fast_window = int(param_fast or 20)
+        slow_window = int(param_slow or 50)
+        if len(df) >= slow_window:
+            ma_fast = df["Close"].rolling(window=fast_window).mean().values
+            ma_slow = df["Close"].rolling(window=slow_window).mean().values
+        else:
+            ma_fast = np.array([close[0]] * len(df))
+            ma_slow = np.array([close[0]] * len(df))
+            
+        for i in range(len(df)):
+            if i < slow_window:
+                signals.append(0)
+                continue
+            prev_fast, prev_slow = ma_fast[i-1], ma_slow[i-1]
+            curr_fast, curr_slow = ma_fast[i], ma_slow[i]
+            
+            if prev_fast <= prev_slow and curr_fast > curr_slow:
+                signals.append(1)  # Buy
+            elif prev_fast >= prev_slow and curr_fast < curr_slow:
+                signals.append(-1)  # Sell
+            else:
+                signals.append(0)
+                
+    elif strategy_name == "RSI_Strategy":
+        delta = df["Close"].diff()
+        gain = (delta.where(delta > 0, 0)).ewm(alpha=1/14, adjust=False).mean()
+        loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/14, adjust=False).mean()
+        # Prevent divide by zero
+        loss_replaced = loss.replace(0, 0.00001)
+        rs = gain / loss_replaced
+        rsi = (100 - (100 / (1 + rs))).values
+        
+        low_thresh = float(param_fast or 30)
+        high_thresh = float(param_slow or 70)
+        
+        for i in range(len(df)):
+            if i < 14 or np.isnan(rsi[i]):
+                signals.append(0)
+                continue
+            if rsi[i] < low_thresh:
+                signals.append(1)
+            elif rsi[i] > high_thresh:
+                signals.append(-1)
+            else:
+                signals.append(0)
+                
+    elif strategy_name == "Bollinger_Strategy":
+        mid = df["Close"].rolling(window=20).mean()
+        std = df["Close"].rolling(window=20).std()
+        upper_band = (mid + 2 * std).values
+        lower_band = (mid - 2 * std).values
+        
+        for i in range(len(df)):
+            if i < 20 or np.isnan(lower_band[i]):
+                signals.append(0)
+                continue
+            if df["Close"].iloc[i] < lower_band[i]:
+                signals.append(1)
+            elif df["Close"].iloc[i] > upper_band[i]:
+                signals.append(-1)
+            else:
+                signals.append(0)
+    elif strategy_name == "MA_Breakthrough":
+        window = int(param_fast or 81)
+        if len(df) >= window:
+            ma = df["Close"].rolling(window=window).mean().values
+        else:
+            ma = np.array([close[0]] * len(df))
+            
+        for i in range(len(df)):
+            if i < window:
+                signals.append(0)
+                continue
+            prev_close = close[i-1]
+            prev_ma = ma[i-1]
+            curr_close = close[i]
+            curr_ma = ma[i]
+            
+            if prev_close <= prev_ma and curr_close > curr_ma:
+                signals.append(1)  # Buy breakthrough
+            elif prev_close >= prev_ma and curr_close < curr_ma:
+                signals.append(-1) # Sell breakthrough
+            else:
+                signals.append(0)
+    elif strategy_name == "MACD_Strategy":
+        fast_period = int(param_fast or 12)
+        slow_period = int(param_slow or 26)
+        signal_period = 9
+        
+        ema_fast = df["Close"].ewm(span=fast_period, adjust=False).mean().values
+        ema_slow = df["Close"].ewm(span=slow_period, adjust=False).mean().values
+        macd_line = ema_fast - ema_slow
+        signal_line = pd.Series(macd_line).ewm(span=signal_period, adjust=False).mean().values
+        
+        for i in range(len(df)):
+            if i < max(fast_period, slow_period):
+                signals.append(0)
+                continue
+            prev_macd, prev_sig = macd_line[i-1], signal_line[i-1]
+            curr_macd, curr_sig = macd_line[i], signal_line[i]
+            
+            if prev_macd <= prev_sig and curr_macd > curr_sig:
+                signals.append(1)  # Golden Cross
+            elif prev_macd >= prev_sig and curr_macd < curr_sig:
+                signals.append(-1)  # Death Cross
+            else:
+                signals.append(0)
+    else:
+        signals = [0] * len(df)
+
+    cash = initial_capital
+    position = 0.0
+    equity_curve = []
+    trades = []
+    current_trade = None
+    
+    for i in range(len(df)):
+        date_str = df.index[i].strftime("%Y-%m-%d")
+        curr_price = float(df["Close"].iloc[i])
+        sig = signals[i]
+        
+        if sig == 1 and position == 0:
+            position = cash / curr_price
+            cash = 0.0
+            current_trade = {
+                "buy_date": date_str,
+                "buy_price": curr_price,
+                "shares": position
+            }
+        elif sig == -1 and position > 0:
+            cash = position * curr_price
+            position = 0.0
+            if current_trade:
+                current_trade["sell_date"] = date_str
+                current_trade["sell_price"] = curr_price
+                current_trade["gain_pct"] = round(((curr_price / current_trade["buy_price"]) - 1) * 100, 2)
+                trades.append(current_trade)
+                current_trade = None
+                
+        port_val = cash + (position * curr_price)
+        equity_curve.append({
+            "date": date_str,
+            "value": round(port_val, 2)
+        })
+        
+    if position > 0 and current_trade:
+        final_price = float(df["Close"].iloc[-1])
+        cash = position * final_price
+        current_trade["sell_date"] = df.index[-1].strftime("%Y-%m-%d")
+        current_trade["sell_price"] = final_price
+        current_trade["gain_pct"] = round(((final_price / current_trade["buy_price"]) - 1) * 100, 2)
+        trades.append(current_trade)
+        position = 0.0
+        
+    total_return = ((cash / initial_capital) - 1) * 100
+    vals = np.array([e["value"] for e in equity_curve])
+    max_vals = np.maximum.accumulate(vals) if len(vals) > 0 else np.array([initial_capital])
+    drawdowns = (vals - max_vals) / max_vals * 100 if len(vals) > 0 else np.array([0.0])
+    max_dd = float(np.min(drawdowns)) if len(drawdowns) > 0 else 0.0
+    
+    for idx, item in enumerate(equity_curve):
+        item["drawdown"] = round(float(drawdowns[idx]), 2)
+        
+    win_trades = [t for t in trades if t["gain_pct"] > 0]
+    win_rate = (len(win_trades) / len(trades) * 100) if len(trades) > 0 else 0.0
+    
+    daily_returns = np.diff(vals) / vals[:-1] if len(vals) > 1 else np.array([0.0])
+    std_dev = np.std(daily_returns)
+    mean_ret = np.mean(daily_returns)
+    sharpe = float((mean_ret / std_dev) * np.sqrt(252)) if std_dev > 0 else 0.0
+    
+    days = (df.index[-1] - df.index[0]).days if len(df) > 1 else 0
+    annualized_return = 0.0
+    if days > 0:
+        annualized_return = ((cash / initial_capital) ** (365.0 / days) - 1) * 100
+        
+    return {
+        "success": True,
+        "strategy": strategy_name,
+        "total_return": round(total_return, 2),
+        "annualized_return": round(annualized_return, 2),
+        "max_drawdown": round(max_dd, 2),
+        "win_rate": round(win_rate, 2),
+        "sharpe_ratio": round(sharpe, 2),
+        "trades_count": len(trades),
+        "trades": trades[-30:],  # last 30 trades
+        "equity_curve": equity_curve
+    }
+
+@app.post("/api/backtest")
+async def run_backtest_api(req: BacktestRequest):
+    """Run a vectorized backtest on daily historical quotes."""
+    ticker = req.ticker.upper().strip()
+    if not ticker:
+        raise HTTPException(status_code=400, detail="Invalid ticker provided")
+    try:
+        import yfinance as yf
+        import pandas as pd
+        
+        clean_ticker = ticker.replace("US.", "").replace("HK.", "") if "." in ticker else ticker
+        raw = yf.download(clean_ticker, period=req.period, interval="1d", progress=False)
+        if raw is None or raw.empty:
+            raise HTTPException(status_code=404, detail=f"No quotes available for backtesting {ticker}")
+            
+        df = raw[["Open", "High", "Low", "Close", "Volume"]].copy()
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+            
+        for col in ["Open", "High", "Low", "Close", "Volume"]:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+        df.dropna(inplace=True)
+        
+        if len(df) < 30:
+            raise HTTPException(status_code=400, detail="Not enough historical quotes to backtest (min 30 needed)")
+            
+        result = _run_backtest(df, req.strategy, req.param_fast, req.param_slow)
+        return result
+    except Exception as e:
+        logger.exception(f"Backtest execution failed for {ticker}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+class ChatCopilotRequest(BaseModel):
+    ticker: str
+    messages: list
+
+@app.post("/api/chat-copilot")
+async def chat_copilot_endpoint(req: ChatCopilotRequest):
+    """Consult the premium AI Wall Street Quant Copilot."""
+    ticker = req.ticker.upper().strip()
+    if not ticker:
+        raise HTTPException(status_code=400, detail="Invalid ticker provided")
+    try:
+        import yfinance as yf
+        t = yf.Ticker(ticker)
+        info = t.info or {}
+    except Exception as e:
+        logger.error(f"Failed to fetch stock telemetry for chat copilot: {e}")
+        info = {}
+
+    system_prompt = f"""You are an elite Wall Street Quant Strategist, Lead Risk Analyst, and Senior Hedge Fund Analyst.
+Your goal is to provide deep, analytical, quantitative, and fundamental insights on stock '{ticker}' for a sophisticated portfolio manager.
+
+Here is the real-time financial telemetry for {ticker}:
+- Company Name: {info.get('longName', ticker)}
+- Sector/Industry: {info.get('sector', 'N/A')} / {info.get('industry', 'N/A')}
+- Current Price: ${info.get('currentPrice') or info.get('previousClose') or 'N/A'}
+- PE Ratio (Trailing): {info.get('trailingPE', 'N/A')}
+- PE Ratio (Forward): {info.get('forwardPE', 'N/A')}
+- PEG Ratio: {info.get('pegRatio', 'N/A')}
+- Price to Book (PB): {info.get('priceToBook', 'N/A')}
+- Return on Equity (ROE): {info.get('returnOnEquity', 'N/A')}
+- Profit Margin: {info.get('profitMargins', 'N/A')}
+- Debt to Equity: {info.get('debtToEquity', 'N/A')}
+- Total Cash: ${info.get('totalCash', 'N/A')}
+- Total Debt: ${info.get('totalDebt', 'N/A')}
+- Beta (Volatility): {info.get('beta', 'N/A')}
+- Revenue Growth (YoY): {info.get('revenueGrowth', 'N/A')}
+
+Core Rules for Your Communication:
+1. ALWAYS respond in natural, professional, and sophisticated Taiwan Chinese (繁體中文). Use standard local Taiwanese financial terminology (例如：營收、淨利、本益比、股東權益報酬率 ROE、資產負債表、部位、避險、多頭/空頭).
+2. Be objective, direct, and analytical. Do not give generic, disclaimer-filled responses or standard templates. Think and speak like a chief strategist at a top-tier hedge fund (e.g., Renaissance Technologies, Millennium, or Point72).
+3. Use structured formatting, rich markdown bullet points, and clean math where appropriate. If the user asks about valuation or risk, refer to the provided financial telemetry to formulate your answer.
+"""
+
+    full_messages = [{"role": "system", "content": system_prompt}] + req.messages
+    
+    try:
+        from agent.auxiliary_client import call_llm, extract_content_or_reasoning
+        response = call_llm(
+            task="chat",
+            messages=full_messages,
+            temperature=0.4
+        )
+        content = extract_content_or_reasoning(response)
+        return {"success": True, "content": content}
+    except Exception as e:
+        logger.exception("AI Copilot request failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+if __name__ == "__main__":
+    logger.info("Starting Standalone Unified Finance Terminal on http://127.0.0.1:9200")
+    uvicorn.run(app, host="127.0.0.1", port=9200)

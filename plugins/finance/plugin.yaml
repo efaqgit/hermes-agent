@@ -1,0 +1,13 @@
+name: finance
+description: "Financial analysis and valuation tools including DCF valuation."
+version: "1.0.0"
+author: "Ken"
+requires_env: []
+provides_tools:
+  - dcf_valuation
+  - company_health_check
+  - get_insider_trades
+  - get_sec_filings
+  - get_earnings_estimates
+  - get_financial_news
+  - x_search

@@ -1,0 +1,13 @@
+{
+  "name": "ai_hedge_fund",
+  "label": "AI Hedge Fund",
+  "description": "Multi-agent hedge fund decision dashboard — Warren Buffett, Charlie Munger, Technical and Sentiment analysis",
+  "icon": "TrendingUp",
+  "version": "1.0.0",
+  "tab": {
+    "path": "/ai-hedge-fund",
+    "position": "after:skills"
+  },
+  "entry": "dist/index.js",
+  "api": "plugin_api.py"
+}

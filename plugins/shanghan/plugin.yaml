@@ -1,0 +1,5 @@
+name: shanghan_tcm
+version: 1.0.0
+description: Traditional Chinese Medicine Engine based on Shanghan Lun and Jingui Yaolue
+author: Kenneth
+enabled: true
