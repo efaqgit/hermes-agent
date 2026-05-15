@@ -5,14 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>傷寒雜病論 - 數位辨證終端</title>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@400;700&family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=3.2">
+    <link rel="stylesheet" href="style.css?v=4.2">
 </head>
 <body>
     <div class="app-container">
         <header class="app-header">
             <div style="position: relative; display: flex; justify-content: center; align-items: center;">
                 <h1><span class="logo-icon">🌿</span> 傷寒雜病論 <span>數位辨證終端</span></h1>
-                <span class="version-badge" style="position: absolute; right: 0; bottom: 8px;">v3.1</span>
+                <span class="version-badge" style="position: absolute; right: 0; bottom: 8px;">v4.0</span>
             </div>
             <p class="subtitle">Quantitative TCM Diagnostic Engine based on Shanghan Lun</p>
         </header>
@@ -56,11 +56,11 @@
 
                 <!-- Book Upload Zone -->
                 <div id="book-upload-zone" class="upload-dropzone">
-                    <input type="file" id="book-file-input" accept=".txt,.md,.epub" style="display: none;">
+                    <input type="file" id="book-file-input" accept=".txt,.md,.epub,.docx" style="display: none;">
                     <div class="dropzone-content">
                         <span class="dropzone-icon">📚</span>
                         <p>拖曳醫案 / 醫書檔案至此</p>
-                        <span class="dropzone-hint">或點擊選擇檔案 (.txt, .md, .epub)</span>
+                        <span class="dropzone-hint">或點擊選擇檔案 (.txt, .md, .epub, .docx)</span>
                     </div>
                     <div id="upload-loader" class="upload-loader" style="display: none;">
                         <span class="loader-spinner"></span>
@@ -69,36 +69,67 @@
                 </div>
             </section>
             
-            <!-- Right Column: Output -->
+            <!-- Right Column: Output & History Tabs -->
             <section class="panel output-panel">
-                <div class="results-header">
-                    <h2>辨證決策矩陣</h2>
-                    <div style="display: flex; gap: 8px; align-items: center;">
-                        <div id="locked-meridian-badge" class="locked-meridian-badge" style="display: none;"></div>
-                        <div class="status-indicator" id="engine-status">等待輸入</div>
-                    </div>
+                <div class="output-tabs">
+                    <div id="tab-diagnosis" class="output-tab active">即時辨證</div>
+                    <div id="tab-history" class="output-tab">📜 歷史醫案</div>
                 </div>
-                
-                <div class="results-content">
-                    <div id="formula-results" class="formula-results">
-                        <div class="empty-state">
-                            請在左側選擇患者目前的症狀，並點擊「執行 AI 辨證」。
+
+                <!-- Tab 1: Realtime Diagnosis -->
+                <div id="panel-diagnosis">
+                    <div class="results-header">
+                        <h2>辨證決策矩陣</h2>
+                        <div style="display: flex; gap: 8px; align-items: center;">
+                            <div id="locked-meridian-badge" class="locked-meridian-badge" style="display: none;"></div>
+                            <div class="status-indicator" id="engine-status">等待輸入</div>
                         </div>
                     </div>
                     
-                    <div class="ai-doctor-panel">
-                        <h3>AI 老中醫深度解析</h3>
-                        <div id="ai-analysis-content" class="markdown-body">
-                            <!-- LLM Typewriter effect goes here -->
-                            <div class="empty-state">等待辨證結果...</div>
+                    <div class="results-content">
+                        <div id="formula-results" class="formula-results">
+                            <div class="empty-state">
+                                請在左側選擇患者目前的症狀，並點擊「執行 AI 辨證」。
+                            </div>
                         </div>
+                        
+                        <div class="ai-doctor-panel">
+                            <h3>AI 老中醫深度解析</h3>
+                            <div id="ai-analysis-content" class="markdown-body">
+                                <div class="empty-state">等待辨證結果...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab 2: History Cases -->
+                <div id="panel-history" class="history-panel">
+                    <div class="results-header">
+                        <h2>歷史醫案記錄</h2>
+                        <div class="status-indicator active">自動封存</div>
+                    </div>
+                    <div id="history-list" class="history-list">
+                        <div class="history-empty">載入歷史記錄中...</div>
                     </div>
                 </div>
             </section>
         </main>
     </div>
     
+    <!-- History Detail Modal -->
+    <div id="history-detail-overlay" class="history-detail-overlay">
+        <div class="history-detail-modal">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                <h3 id="modal-history-title">醫案詳細記錄</h3>
+                <button id="modal-history-close" class="history-detail-close">關閉 ✕</button>
+            </div>
+            <div id="modal-history-body" class="markdown-body">
+                載入中...
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <script src="app.js?v=3.2"></script>
+    <script src="app.js?v=4.0"></script>
 </body>
 </html>

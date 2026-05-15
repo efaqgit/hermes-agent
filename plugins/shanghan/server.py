@@ -7,7 +7,9 @@ import sys
 import os
 import json
 import logging
+import uuid
 import uvicorn
+from datetime import datetime
 from typing import List
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.responses import HTMLResponse, FileResponse
@@ -167,7 +169,22 @@ SYMPTOM_MAP = {
     'severe_itching': '瘙癢劇烈',
     'skin_redness_swelling': '皮膚紅腫',
     'skin_exudation': '皮膚滲液/流滋',
-    'wind_wheals': '風團/蕁麻疹塊'
+    'wind_wheals': '風團/蕁麻疹塊',
+    'abdominal_pain': '腹痛',
+    'acid_reflux': '泛酸/吐酸',
+    'acrid_taste_in_mouth': '口中酸苦',
+    'anxiety_distress': '煩躁不安',
+    'anxiety_not_in_list': '心煩/焦慮',
+    'anxiety_not_listed': '驚悸/心神不寧',
+    'bloating': '脘腹脹滿',
+    'itching': '皮膚瘙癢',
+    'pain_in_limbs': '四肢疼痛',
+    'painful_swelling': '腫痛',
+    'palpitation': '心悸/怔忡',
+    'pulse_floating_large': '脈浮大',
+    'red_tongue_with_no_coating': '舌紅無苔',
+    'wheezing': '喘鳴',
+    'wheezing_cough': '喘咳'
 }
 
 # ─── FRONTEND STATIC ROUTING ──────────────────────────────────────────
@@ -200,6 +217,68 @@ async def get_symptoms():
     # Sort alphabetically by Chinese pinyin/stroke conceptually, or just return
     return {"success": True, "data": result}
 
+def _retrieve_rag_context(formulas: list, symptoms: list, category: str) -> str:
+    db_path = os.path.join(PLUGIN_DIR, "medical_knowledge_db.json")
+    if not os.path.exists(db_path):
+        return ""
+    try:
+        with open(db_path, "r", encoding="utf-8") as f:
+            records = json.load(f)
+        if not records or not isinstance(records, list):
+            return ""
+            
+        # Build query keywords
+        formula_names = [r["name"] for r in formulas[:3]]
+        ingredients = []
+        for r in formulas[:3]:
+            for ing in r.get("ingredients", []):
+                # Clean ingredient string (e.g. "桂枝 三兩" -> "桂枝")
+                ing_clean = ing.split()[0] if ing else ""
+                if ing_clean and len(ing_clean) >= 2:
+                    ingredients.append(ing_clean)
+                    
+        zh_symptoms = [SYMPTOM_MAP.get(s, s) for s in symptoms]
+        
+        # Score chunks
+        scored_chunks = []
+        for rec in records:
+            content = rec.get("content", "")
+            if not content:
+                continue
+            score = 0.0
+            for fn in formula_names:
+                if fn in content:
+                    score += 10.0
+            for ing in ingredients:
+                if ing in content:
+                    score += 3.0
+            for sym in zh_symptoms:
+                if sym in content:
+                    score += 2.0
+            if category and category in content:
+                score += 2.0
+                
+            if score > 0:
+                scored_chunks.append((score, rec))
+                
+        if not scored_chunks:
+            return ""
+            
+        scored_chunks.sort(key=lambda x: x[0], reverse=True)
+        top_records = [x[1] for x in scored_chunks[:4]]
+        
+        rag_text = "【上傳醫書知識庫檢索結果 (RAG Reference DB)】：\n以下是自您上傳的經典醫著中所檢索出與本案高度相關的文獻段落：\n\n"
+        for rec in top_records:
+            bname = rec.get("book_name", "醫書文獻")
+            cid = rec.get("chunk_id", "")
+            cnt = rec.get("content", "").strip()
+            rag_text += f"--- 文獻來源：[{bname}] ({cid}) ---\n{cnt}\n\n"
+            
+        return rag_text.strip()
+    except Exception as e:
+        logger.error(f"RAG retrieval error: {e}")
+        return ""
+
 @app.post("/api/analyze")
 async def analyze_symptoms(req: AnalyzeRequest):
     """Run Shanghan Engine analysis and use LLM to summarize."""
@@ -219,8 +298,11 @@ async def analyze_symptoms(req: AnalyzeRequest):
     try:
         if formulas:
             top_formulas = [f"{r['name']} (分數: {r['score']})" for r in formulas[:3]]
-            
             zh_symptoms = [SYMPTOM_MAP.get(s, s) for s in symptoms]
+            rag_context = _retrieve_rag_context(formulas, symptoms, locked_category)
+            rag_instruction = ""
+            if rag_context:
+                rag_instruction = f"\n\n{rag_context}\n\n【特別指示】：請你在第 5 點「藥物精解與醫書引據」中，務必明確引用並解讀上述【上傳醫書知識庫檢索結果】中的具體文獻段落與觀點！指明出自哪一部上傳醫書（如：「正如您上傳的《本經疏證》所言...」或「根據上傳知識庫記載...」），讓診斷結果真正具備權威文獻支持。"
             
             prompt = f"""請你扮演一位精通《傷寒雜病論》與《金匱要略》的經方派老中醫大師（如胡希恕、曹穎甫）。
 患者目前的主要症狀為：{', '.join(zh_symptoms)}。
@@ -237,7 +319,7 @@ async def analyze_symptoms(req: AnalyzeRequest):
 2. 【抓主症】：擷取出病人的哪幾個關鍵症狀，完美契合了推薦方劑的條文？
 3. 【方證對應】：為何此方最合適？
 4. 【處方加減與變證法】：結合歷史經典醫案（如胡希恕醫案思考模型），給出明確的服用禁忌與調護。
-5. **《本經疏證》藥物精解**：嚴格根據清代鄒澍《本經疏證》的理論，解析推薦方劑中的核心藥物，深度說明該藥物為何能針對患者現有症狀。
+5. **《本經疏證》藥物精解與醫書引據**：嚴格解析推薦方劑中的核心藥物，深度說明該藥物為何能針對患者現有症狀。{rag_instruction}
 
 不需要免責聲明，直接以老中醫大師的口吻進行系統性剖析。輸出格式請使用 Markdown，排版要精美、段落分明。
 """
@@ -341,9 +423,9 @@ async def extract_symptoms(req: ExtractRequest):
 
 @app.post("/api/upload_book")
 async def upload_book(file: UploadFile = File(...)):
-    """Receive a text or epub file, ingest it, and add to the local RAG DB."""
-    if not file.filename.endswith(('.txt', '.md', '.epub')):
-        raise HTTPException(status_code=400, detail="Only .txt, .md, and .epub files are supported.")
+    """Receive a text, epub, or docx file, ingest it, and add to the local RAG DB."""
+    if not file.filename.endswith(('.txt', '.md', '.epub', '.docx')):
+        raise HTTPException(status_code=400, detail="Only .txt, .md, .epub, and .docx files are supported.")
         
     try:
         content_bytes = await file.read()
@@ -364,6 +446,15 @@ async def upload_book(file: UploadFile = File(...)):
             except Exception as e:
                 logger.error(f"Failed to parse epub: {e}")
                 raise HTTPException(status_code=400, detail="Failed to parse the EPUB file. It might be corrupted.")
+        elif file.filename.endswith('.docx'):
+            import io
+            try:
+                from docx import Document
+                doc = Document(io.BytesIO(content_bytes))
+                content = "\n".join(para.text for para in doc.paragraphs if para.text.strip())
+            except Exception as e:
+                logger.error(f"Failed to parse docx: {e}")
+                raise HTTPException(status_code=400, detail="Failed to parse the DOCX file. It might be corrupted.")
         else:
             content = content_bytes.decode('utf-8', errors='replace')
         
@@ -388,6 +479,87 @@ async def upload_book(file: UploadFile = File(...)):
     except Exception as e:
         logger.error(f"Failed to upload and ingest book: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+# ─── CASE HISTORY API ────────────────────────────────────────────────
+
+HISTORY_DB_PATH = os.path.join(PLUGIN_DIR, "case_history.json")
+
+def _load_history() -> list:
+    if os.path.exists(HISTORY_DB_PATH):
+        try:
+            with open(HISTORY_DB_PATH, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return []
+    return []
+
+def _save_history(records: list):
+    with open(HISTORY_DB_PATH, "w", encoding="utf-8") as f:
+        json.dump(records, f, ensure_ascii=False, indent=2)
+
+class SaveCaseRequest(BaseModel):
+    symptoms: List[str]
+    locked_category: str = ""
+    formulas: list = []
+    llm_analysis: str = ""
+
+@app.post("/api/history/save")
+async def save_case(req: SaveCaseRequest):
+    """Save a completed diagnosis case to local history."""
+    records = _load_history()
+    zh_symptoms = [SYMPTOM_MAP.get(s, s) for s in req.symptoms]
+    top_formula = req.formulas[0]["name"] if req.formulas else "無"
+    top_score = req.formulas[0]["score"] if req.formulas else 0
+
+    case = {
+        "id": str(uuid.uuid4()),
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "symptoms_keys": req.symptoms,
+        "symptoms_zh": zh_symptoms,
+        "locked_category": req.locked_category,
+        "top_formula": top_formula,
+        "top_score": top_score,
+        "formulas": req.formulas[:5],
+        "llm_analysis": req.llm_analysis
+    }
+    records.insert(0, case)
+    _save_history(records)
+    return {"success": True, "id": case["id"]}
+
+@app.get("/api/history/list")
+async def list_cases():
+    """Return all saved cases (summary only, newest first)."""
+    records = _load_history()
+    summaries = []
+    for r in records:
+        summaries.append({
+            "id": r["id"],
+            "timestamp": r["timestamp"],
+            "symptoms_zh": r.get("symptoms_zh", []),
+            "locked_category": r.get("locked_category", ""),
+            "top_formula": r.get("top_formula", ""),
+            "top_score": r.get("top_score", 0)
+        })
+    return {"success": True, "data": summaries}
+
+@app.get("/api/history/{case_id}")
+async def get_case(case_id: str):
+    """Return full detail of a single case."""
+    records = _load_history()
+    for r in records:
+        if r["id"] == case_id:
+            return {"success": True, "data": r}
+    raise HTTPException(status_code=404, detail="Case not found")
+
+@app.delete("/api/history/{case_id}")
+async def delete_case(case_id: str):
+    """Delete a single case from history."""
+    records = _load_history()
+    new_records = [r for r in records if r["id"] != case_id]
+    if len(new_records) == len(records):
+        raise HTTPException(status_code=404, detail="Case not found")
+    _save_history(new_records)
+    return {"success": True}
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=9300)
