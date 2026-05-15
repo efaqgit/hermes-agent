@@ -40,7 +40,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 "dyspnea", "cough_watery_sputum", "cough_with_fever_and_shivering",
                 "cough_with_pus_blood", "cough_with_yin_deficiency_dryness",
                 "heavy_water_phlegm_in_lung", "high_fever_with_extreme_thirst",
-                "throat_obstruction_globus", "chest_heat_irritability"
+                "throat_obstruction_globus", "chest_heat_irritability",
+                "wheezing", "wheezing_cough"
             ]
         },
         "digestion": {
@@ -54,7 +55,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 "diarrhea_clear_food_with_spleen_collapse", "diarrhea_due_to_spleen_deficiency",
                 "diarrhea_without_dry_feces", "severe_interior_excess_with_dry_feces",
                 "delirious_speech", "throbbing_below_heart", "splash_sound_epigastric",
-                "difficult_sticky_defecation", "thirst_with_water_vomiting"
+                "difficult_sticky_defecation", "thirst_with_water_vomiting",
+                "abdominal_pain", "acid_reflux", "acrid_taste_in_mouth", "bloating"
             ]
         },
         "excretion": {
@@ -67,7 +69,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 "urine_yellow", "nocturia_frequent", "heart_palpitation", "salivation",
                 "no_qi_rush_after_purging", "severe_postpartum_weakness",
                 "severe_yin_yang_deficiency_with_limb_spasms", "alcoholic_constitution",
-                "generalized_edema", "shortness_of_breath_exertion", "yellow_skin_eyes_jaundice"
+                "generalized_edema", "shortness_of_breath_exertion", "yellow_skin_eyes_jaundice",
+                "pain_in_limbs", "painful_swelling", "palpitation", "profuse_sweating_with_亡陽"
             ]
         },
         "gynecology": {
@@ -87,7 +90,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 "pulse_sunken_forceful", "pulse_fine_weak", "pulse_flooding_large",
                 "red_tongue_scanty_coating", "yellow_dry_tongue_coating",
                 "tongue_red_with_no_coating", "blood_stasis_tongue", "skin_scaling_dryness",
-                "stabbing_lower_abdomen", "dark_circles_under_eyes"
+                "stabbing_lower_abdomen", "dark_circles_under_eyes",
+                "pulse_floating_large", "red_tongue_with_no_coating"
             ]
         },
         "miscellaneous": {
@@ -95,7 +99,8 @@ document.addEventListener("DOMContentLoaded", () => {
             "icon": "🦠",
             "keys": [
                 "gallstones", "lipoma", "right_upper_quadrant_pain",
-                "fatty_liver", "gout", "insomnia", "dizziness", "tinnitus"
+                "fatty_liver", "gout", "insomnia", "dizziness", "tinnitus",
+                "anxiety_distress", "anxiety_not_in_list", "anxiety_not_listed"
             ]
         },
         "dermatology": {
@@ -103,7 +108,7 @@ document.addEventListener("DOMContentLoaded", () => {
             "icon": "🧴",
             "keys": [
                 "eczema", "urticaria", "psoriasis", "severe_itching",
-                "skin_redness_swelling", "skin_exudation", "wind_wheals"
+                "skin_redness_swelling", "skin_exudation", "wind_wheals", "itching"
             ]
         }
     };
@@ -255,15 +260,11 @@ document.addEventListener("DOMContentLoaded", () => {
                         selectedKeys.add(k);
                     });
 
-                    // Sync visual states of pills
-                    document.querySelectorAll(".symptom-pill").forEach(pill => {
-                        const pillKey = pill.dataset.key;
-                        if (selectedKeys.has(pillKey)) {
-                            pill.classList.add("selected");
-                        } else {
-                            pill.classList.remove("selected");
-                        }
-                    });
+                    // Explicitly switch back to "all" category and clear search so user sees all selected pills
+                    selectedCategory = "all";
+                    searchInput.value = "";
+                    renderCategoryTabs();
+                    filterAndRenderSymptoms();
 
                     updateUI();
 
@@ -340,6 +341,9 @@ document.addEventListener("DOMContentLoaded", () => {
                 renderResults(data.formulas);
                 typewriterEffect(aiAnalysisContent, data.llm_analysis);
                 engineStatus.textContent = "辨證完成";
+
+                // Auto save case to history
+                saveCaseToHistory(Array.from(selectedKeys), data.locked_category || "", data.formulas, data.llm_analysis);
             } else {
                 formulaResults.innerHTML = `<div class="empty-state" style="color:var(--danger)">發生錯誤: ${data.detail || '未知錯誤'}</div>`;
                 aiAnalysisContent.innerHTML = `<div class="empty-state" style="color:var(--danger)">分析中斷。</div>`;
@@ -502,14 +506,13 @@ document.addEventListener("DOMContentLoaded", () => {
             if (e.target.files && e.target.files.length > 0) {
                 handleFileUpload(e.target.files[0]);
             }
-            // Reset input so the same file can be selected again if needed
             fileInput.value = "";
         });
     }
 
     async function handleFileUpload(file) {
-        if (!file.name.endsWith('.txt') && !file.name.endsWith('.md') && !file.name.endsWith('.epub')) {
-            alert("請上傳 .txt, .md 或 .epub 格式的檔案！");
+        if (!file.name.endsWith('.txt') && !file.name.endsWith('.md') && !file.name.endsWith('.epub') && !file.name.endsWith('.docx')) {
+            alert("請上傳 .txt, .md, .epub 或 .docx 格式的檔案！");
             return;
         }
 
@@ -526,7 +529,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const data = await response.json();
             
             if (data.success) {
-                alert(`✅ 醫書/醫案學習完成！\n已成功解析並擴充至知識庫。\n(本次新增 ${data.message.split('ingested ')[1].split(' chunks')[0]} 個知識片段)`);
+                alert(`✅ 醫书/醫案學習完成！\n已成功解析並擴充至知識庫。\n(本次新增 ${data.message.split('ingested ')[1].split(' chunks')[0]} 個知識片段)`);
             } else {
                 alert("上傳失敗：" + (data.detail || "未知錯誤"));
             }
@@ -537,4 +540,129 @@ document.addEventListener("DOMContentLoaded", () => {
             uploadLoader.style.display = "none";
         }
     }
+
+    // ─── CASE HISTORY TABS & LOGIC ──────────────────────────────────────
+    const tabDiagnosis = document.getElementById("tab-diagnosis");
+    const tabHistory = document.getElementById("tab-history");
+    const panelDiagnosis = document.getElementById("panel-diagnosis");
+    const panelHistory = document.getElementById("panel-history");
+    const historyList = document.getElementById("history-list");
+    const overlay = document.getElementById("history-detail-overlay");
+    const modalClose = document.getElementById("modal-history-close");
+    const modalTitle = document.getElementById("modal-history-title");
+    const modalBody = document.getElementById("modal-history-body");
+
+    if (tabDiagnosis && tabHistory) {
+        tabDiagnosis.addEventListener("click", () => {
+            tabDiagnosis.classList.add("active");
+            tabHistory.classList.remove("active");
+            panelDiagnosis.classList.remove("visible");
+            panelHistory.classList.remove("visible");
+            panelDiagnosis.style.display = "block";
+            panelHistory.style.display = "none";
+        });
+        tabHistory.addEventListener("click", () => {
+            tabHistory.classList.add("active");
+            tabDiagnosis.classList.remove("active");
+            panelDiagnosis.style.display = "none";
+            panelHistory.style.display = "block";
+            panelHistory.classList.add("visible");
+            fetchHistoryList();
+        });
+    }
+
+    if (modalClose && overlay) {
+        modalClose.addEventListener("click", () => overlay.classList.remove("visible"));
+        overlay.addEventListener("click", (e) => {
+            if (e.target === overlay) overlay.classList.remove("visible");
+        });
+    }
+
+    async function saveCaseToHistory(symptoms, locked_category, formulas, llm_analysis) {
+        try {
+            await fetch("/api/history/save", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ symptoms, locked_category, formulas, llm_analysis })
+            });
+        } catch (err) {
+            console.error("Failed to save history:", err);
+        }
+    }
+
+    async function fetchHistoryList() {
+        historyList.innerHTML = `<div class="history-empty">載入歷史記錄中...</div>`;
+        try {
+            const response = await fetch("/api/history/list");
+            const data = await response.json();
+            if (data.success && data.data.length > 0) {
+                historyList.innerHTML = "";
+                data.data.forEach(item => {
+                    const card = document.createElement("div");
+                    card.className = "history-card";
+                    card.innerHTML = `
+                        <div class="history-date">${item.timestamp}</div>
+                        <div class="history-meridian">${item.locked_category || "未分類"}</div>
+                        <div class="history-formula">${item.top_formula || "無匹配方劑"}</div>
+                        <div class="history-symptoms">症狀: ${(item.symptoms_zh || []).join("、")}</div>
+                        <div class="history-score">${item.top_score > 0 ? item.top_score + "分" : ""}</div>
+                        <button class="history-delete-btn" title="刪除記錄">刪除 ✕</button>
+                    `;
+                    card.addEventListener("click", (e) => {
+                        if (e.target.classList.contains("history-delete-btn")) {
+                            e.stopPropagation();
+                            deleteHistoryCase(item.id, card);
+                        } else {
+                            viewHistoryDetail(item.id);
+                        }
+                    });
+                    historyList.appendChild(card);
+                });
+            } else {
+                historyList.innerHTML = `<div class="history-empty">目前尚無歷史醫案記錄。進行辨證後系統將自動封存。</div>`;
+            }
+        } catch (err) {
+            historyList.innerHTML = `<div class="history-empty" style="color:var(--danger)">載入失敗，無法連接伺服器。</div>`;
+        }
+    }
+
+    async function viewHistoryDetail(id) {
+        modalBody.innerHTML = "載入中...";
+        overlay.classList.add("visible");
+        try {
+            const response = await fetch(`/api/history/${id}`);
+            const data = await response.json();
+            if (data.success) {
+                const caseData = data.data;
+                modalTitle.textContent = `醫案記錄 (${caseData.timestamp})`;
+                
+                let formulasHtml = "";
+                if (caseData.formulas && caseData.formulas.length > 0) {
+                    formulasHtml = `#### 匹配方劑\n` + caseData.formulas.map(f => `- **${f.name}** (${f.score}分)`).join("\n") + "\n\n";
+                }
+
+                const markdownText = `### 患者症狀\n${(caseData.symptoms_zh || []).join("、")}\n\n#### 六經定位\n${caseData.locked_category || "未分類"}\n\n${formulasHtml}#### 老中醫深度解析\n${caseData.llm_analysis || "無解析內容"}`;
+                modalBody.innerHTML = window.marked ? window.marked.parse(markdownText) : markdownText;
+            }
+        } catch (err) {
+            modalBody.innerHTML = `<div style="color:var(--danger)">載入詳細記錄失敗。</div>`;
+        }
+    }
+
+    async function deleteHistoryCase(id, cardElem) {
+        if (!confirm("確定要刪除此筆歷史醫案記錄嗎？")) return;
+        try {
+            const res = await fetch(`/api/history/${id}`, { method: "DELETE" });
+            const data = await res.json();
+            if (data.success) {
+                cardElem.remove();
+                if (historyList.children.length === 0) {
+                    historyList.innerHTML = `<div class="history-empty">目前尚無歷史醫案記錄。進行辨證後系統將自動封存。</div>`;
+                }
+            }
+        } catch (err) {
+            alert("刪除失敗");
+        }
+    }
 });
+
