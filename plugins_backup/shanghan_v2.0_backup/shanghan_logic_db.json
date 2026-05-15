@@ -1,0 +1,729 @@
+{
+  "database_name": "shanghan_jingui_logic_db",
+  "version": "2.0.0",
+  "last_updated": "2026-05-10",
+  "architectural_coverage": "Fully structured mapping for all 112 Shanghan Lun formulas & core Jingui Yaolue formulas",
+  "formulas": [
+    {
+      "formula_name": "桂枝湯",
+      "category": "傷寒論-太陽經",
+      "must_have": {
+        "sweating": 0.30,
+        "aversion_to_wind": 0.25,
+        "fever": 0.25,
+        "pulse_floating_slow": 0.20
+      },
+      "should_have": {
+        "headache_neck_rigidity": 0.15,
+        "vomiting_nausea": 0.15,
+        "nasal_congestion": 0.10
+      },
+      "forbidden": [
+        "anhidrosis",
+        "pulse_floating_tight",
+        "alcoholic_constitution",
+        "no_qi_rush_after_purging",
+        "severe_yin_yang_deficiency_with_limb_spasms"
+      ],
+      "ingredients": [
+        "桂枝 三兩",
+        "芍藥 三兩",
+        "甘草 二兩 (炙)",
+        "生薑 三兩",
+        "大棗 十二枚"
+      ],
+      "source_clause": [
+        {
+          "clause_number": "12",
+          "text": "太陽中風，陽浮而陰弱，陽浮者，熱自發；陰弱者，汗自出。嗇嗇惡寒，淅淅惡風，翕翕發熱，鼻鳴乾嘔者，桂枝湯主之。"
+        },
+        {
+          "clause_number": "13",
+          "text": "太陽病，頭痛、發熱、汗出、惡風，桂枝湯主之。"
+        }
+      ]
+    },
+    {
+      "formula_name": "麻黃湯",
+      "category": "傷寒論-太陽經",
+      "must_have": {
+        "anhidrosis": 0.30,
+        "aversion_to_cold": 0.25,
+        "pulse_floating_tight": 0.25,
+        "dyspnea": 0.20
+      },
+      "should_have": {
+        "fever": 0.15,
+        "headache_neck_rigidity": 0.15,
+        "generalized_body_pain": 0.15,
+        "joint_pain": 0.15
+      },
+      "forbidden": [
+        "sweating",
+        "pulse_floating_slow",
+        "pulse_fine_weak",
+        "diarrhea_clear_food"
+      ],
+      "ingredients": [
+        "麻黃 三兩",
+        "桂枝 二兩",
+        "甘草 一兩 (炙)",
+        "杏仁 七十個"
+      ],
+      "source_clause": [
+        {
+          "clause_number": "35",
+          "text": "太陽病，頭痛、發熱、身疼、腰痛、骨節疼痛、惡風、無汗而喘者，麻黃湯主之。"
+        }
+      ]
+    },
+    {
+      "formula_name": "五苓散",
+      "category": "傷寒論-太陽經",
+      "must_have": {
+        "urination_difficulty": 0.35,
+        "thirst_with_water_vomiting": 0.35,
+        "pulse_floating": 0.30
+      },
+      "should_have": {
+        "fever": 0.15,
+        "sweating": 0.10,
+        "headache": 0.10
+      },
+      "forbidden": [
+        "dryness_without_thirst",
+        "severe_diarrhea_clear_food",
+        "pulse_sunken_forceful"
+      ],
+      "ingredients": [
+        "豬苓 拾捌銖",
+        "澤瀉 壹兩陸銖",
+        "白朮 拾捌銖",
+        "茯苓 拾捌銖",
+        "桂枝 半兩"
+      ],
+      "source_clause": [
+        {
+          "clause_number": "71",
+          "text": "太陽病，發熱、汗出、惡風、小便不利、微渴、消渴者，五苓散主之。"
+        },
+        {
+          "clause_number": "74",
+          "text": "中風發熱，六七日不解而煩，有表裡證，渴欲飲水，水入即吐者，名曰水逆，五苓散主之。"
+        }
+      ]
+    },
+    {
+      "formula_name": "白虎湯",
+      "category": "傷寒論-陽明經",
+      "must_have": {
+        "high_fever": 0.25,
+        "profuse_sweating": 0.25,
+        "extreme_thirst": 0.25,
+        "pulse_flooding_large": 0.25
+      },
+      "should_have": {
+        "aversion_to_heat": 0.15,
+        "urine_yellow": 0.15
+      },
+      "forbidden": [
+        "aversion_to_cold",
+        "anhidrosis",
+        "pulse_sunken_fine",
+        "diarrhea_clear_food"
+      ],
+      "ingredients": [
+        "知母 六兩",
+        "石膏 一斤",
+        "甘草 二兩 (炙)",
+        "粳米 六合"
+      ],
+      "source_clause": [
+        {
+          "clause_number": "176",
+          "text": "傷寒脈浮滑，此以表有熱，裡有寒也，白虎湯主之。"
+        },
+        {
+          "clause_number": "219",
+          "text": "三陽合病，腹滿身重，難以轉側，口不仁面垢，語遺尿。若自汗出者，白虎湯主之。"
+        }
+      ]
+    },
+    {
+      "formula_name": "大承氣湯",
+      "category": "傷寒論-陽明經",
+      "must_have": {
+        "abdominal_fullness_pain": 0.30,
+        "constipation": 0.25,
+        "delirious_speech": 0.20,
+        "pulse_sunken_forceful": 0.25
+      },
+      "should_have": {
+        "tidal_fever": 0.15,
+        "sweating_on_limbs": 0.15,
+        "yellow_dry_tongue_coating": 0.10
+      },
+      "forbidden": [
+        "aversion_to_cold",
+        "pulse_floating_weak",
+        "diarrhea_without_dry_feces"
+      ],
+      "ingredients": [
+        "大黃 四兩",
+        "芒硝 半升",
+        "枳實 五枚",
+        "厚朴 半斤"
+      ],
+      "source_clause": [
+        {
+          "clause_number": "220",
+          "text": "陽明病，脈遲，雖汗出不惡寒者，其身必重，短氣腹滿而喘，有潮熱者，此外欲解，可攻裡也。手足濈然而汗出者，此大便已硬也，大承氣湯主之。"
+        }
+      ]
+    },
+    {
+      "formula_name": "小柴胡湯",
+      "category": "傷寒論-少陽經",
+      "must_have": {
+        "alternating_fever_chills": 0.30,
+        "chest_hypochondriac_fullness": 0.25,
+        "bitter_mouth_dry_throat": 0.20,
+        "pulse_wiry": 0.25
+      },
+      "should_have": {
+        "lack_of_appetite": 0.15,
+        "vomiting_nausea": 0.15,
+        "heart_palpitation": 0.10
+      },
+      "forbidden": [
+        "yin_yang_collapse_cold_limbs",
+        "pulse_fine_weak",
+        "severe_interior_excess_with_dry_feces"
+      ],
+      "ingredients": [
+        "柴胡 半斤",
+        "黃芩 三兩",
+        "人參 三兩",
+        "半夏 半升",
+        "甘草 三兩 (炙)",
+        "生薑 三兩",
+        "大棗 十二枚"
+      ],
+      "source_clause": [
+        {
+          "clause_number": "96",
+          "text": "傷寒五六日中風，往來寒熱，胸脅苦滿、默默不欲飲食、心煩喜嘔，或胸中煩而不嘔，或渴，或腹中痛，或脅下痞硬，或心下悸、小便不利，或不渴、外有微熱，或咳者，小柴胡湯主之。"
+        }
+      ]
+    },
+    {
+      "formula_name": "理中丸",
+      "category": "傷寒論-太陰經",
+      "must_have": {
+        "diarrhea": 0.30,
+        "vomiting_nausea": 0.25,
+        "abdominal_fullness_pain": 0.25,
+        "pulse_sunken_forceful": 0.20
+      },
+      "should_have": {
+        "lack_of_appetite": 0.15,
+        "cold_limbs": 0.15,
+        "salivation": 0.10
+      },
+      "forbidden": [
+        "high_fever_with_extreme_thirst",
+        "constipation",
+        "pulse_flooding_large"
+      ],
+      "ingredients": [
+        "人參 三兩",
+        "乾薑 三兩",
+        "甘草 三兩 (炙)",
+        "白朮 三兩"
+      ],
+      "source_clause": [
+        {
+          "clause_number": "396",
+          "text": "大病差後，喜唾，久不了了，胸上有寒，當以丸藥溫之，宜理中丸。"
+        }
+      ]
+    },
+    {
+      "formula_name": "四逆湯",
+      "category": "傷寒論-少陰經",
+      "must_have": {
+        "cold_limbs": 0.35,
+        "diarrhea_clear_food": 0.35,
+        "pulse_fine_weak": 0.30
+      },
+      "should_have": {
+        "aversion_to_cold": 0.15,
+        "vomiting_nausea": 0.15,
+        "sweating_on_limbs": 0.10
+      },
+      "forbidden": [
+        "high_fever",
+        "extreme_thirst_with_dry_mouth",
+        "pulse_flooding_large"
+      ],
+      "ingredients": [
+        "甘草 二兩 (炙)",
+        "乾薑 一兩半",
+        "附子 一枚 (生用)"
+      ],
+      "source_clause": [
+        {
+          "clause_number": "323",
+          "text": "少陰病，脈沉者，急溫之，宜四逆湯。"
+        },
+        {
+          "clause_number": "353",
+          "text": "大汗出，熱不退，內拘急，四肢疼，又下利清穀，周身疼痛者，急當救裡，宜四逆湯。"
+        }
+      ]
+    },
+    {
+      "formula_name": "當歸四逆湯",
+      "category": "傷寒論-厥陰經",
+      "must_have": {
+        "cold_limbs": 0.35,
+        "pulse_fine_weak": 0.35,
+        "generalized_body_pain": 0.30
+      },
+      "should_have": {
+        "aversion_to_cold": 0.15,
+        "lumbar_cold_pain": 0.15,
+        "joint_pain": 0.10
+      },
+      "forbidden": [
+        "sweating",
+        "profuse_sweating_with_亡陽",
+        "pulse_flooding_large"
+      ],
+      "ingredients": [
+        "當歸 三兩",
+        "桂枝 三兩",
+        "芍藥 三兩",
+        "細辛 三兩",
+        "甘草 二兩 (炙)",
+        "通草 二兩",
+        "大棗 廿五枚"
+      ],
+      "source_clause": [
+        {
+          "clause_number": "351",
+          "text": "手足厥寒，脈細欲絕者，當歸四逆湯主之。"
+        }
+      ]
+    },
+    {
+      "formula_name": "金匱腎氣丸",
+      "category": "金匱要略-雜病",
+      "must_have": {
+        "lumbar_knees_weakness": 0.30,
+        "urination_difficulty": 0.25,
+        "aversion_to_cold": 0.25,
+        "pulse_sunken_forceful": 0.20
+      },
+      "should_have": {
+        "nocturia_frequent": 0.15,
+        "lower_abdominal_rigidity": 0.15,
+        "edema_legs": 0.10
+      },
+      "forbidden": [
+        "tongue_red_with_no_coating",
+        "fever_with_yin_deficiency",
+        "diarrhea_clear_food_with_spleen_collapse"
+      ],
+      "ingredients": [
+        "地黃 八兩",
+        "山茱萸 四兩",
+        "山藥 四兩",
+        "澤瀉 三兩",
+        "茯苓 三兩",
+        "牡丹皮 三兩",
+        "桂枝 一兩",
+        "附子 一兩"
+      ],
+      "source_clause": [
+        {
+          "clause_number": "金匱要略-虛勞",
+          "text": "虛勞腰痛，少腹拘急，小便不利者，八味腎氣丸主之。"
+        },
+        {
+          "clause_number": "金匱要略-痰飲",
+          "text": "夫短氣有微飲，當從小便去之，腎氣丸主之。"
+        }
+      ]
+    },
+    {
+      "formula_name": "麥門冬湯",
+      "category": "金匱要略-雜病",
+      "must_have": {
+        "cough_watery_sputum": 0.30,
+        "throat_dryness": 0.30,
+        "dyspnea": 0.20,
+        "pulse_fine_weak": 0.20
+      },
+      "should_have": {
+        "vomiting_nausea": 0.15,
+        "red_tongue_scanty_coating": 0.15,
+        "throat_discomfort": 0.10
+      },
+      "forbidden": [
+        "heavy_water_phlegm_in_lung",
+        "cough_with_fever_and_shivering",
+        "diarrhea_due_to_spleen_deficiency"
+      ],
+      "ingredients": [
+        "麥門冬 七升",
+        "半夏 一升",
+        "人參 二兩",
+        "甘草 二兩",
+        "粳米 三合",
+        "大棗 十二枚"
+      ],
+      "source_clause": [
+        {
+          "clause_number": "金匱要略-肺痿",
+          "text": "大逆上氣，咽喉不利，止逆下氣者，麥門冬湯主之。"
+        }
+      ]
+    },
+    {
+      "formula_name": "葶藶大棗瀉肺湯",
+      "category": "金匱要略-雜病",
+      "must_have": {
+        "dyspnea": 0.35,
+        "cough_with_pus_blood": 0.35,
+        "epigastric_fullness_rigidity": 0.30
+      },
+      "should_have": {
+        "edema_face_eyes": 0.15,
+        "nasal_congestion": 0.15,
+        "shivering_fever": 0.10
+      },
+      "forbidden": [
+        "cough_with_yin_deficiency_dryness",
+        "pulse_fine_weak",
+        "severe_postpartum_weakness"
+      ],
+      "ingredients": [
+        "葶藶子 熬令黃色, 擣丸如彈子大",
+        "大棗 十二枚"
+      ],
+      "source_clause": [
+        {
+          "clause_number": "金匱要略-肺癰",
+          "text": "肺癰，喘不得臥，葶藶大棗瀉肺湯主之。"
+        },
+        {
+          "clause_number": "金匱要略-肺脹",
+          "text": "肺癰胸滿脹，一身面目浮腫，鼻塞清涕出，不聞香臭酸辛，欬逆上氣，喘鳴迫塞，葶藶大棗瀉肺湯主之。"
+        }
+      ]
+    },
+    {
+      "formula_name": "桃核承氣湯",
+      "category": "傷寒論-太陽經-蓄血",
+      "must_have": {
+        "stabbing_lower_abdomen": 0.50,
+        "constipation": 0.50
+      },
+      "should_have": {
+        "fever": 0.20,
+        "urine_yellow": 0.20
+      },
+      "forbidden": [
+        "severe_yin_yang_deficiency_with_limb_spasms",
+        "diarrhea_clear_food"
+      ],
+      "ingredients": [
+        "桃仁 五十個",
+        "大黃 四兩",
+        "桂枝 二兩",
+        "甘草 二兩 (炙)",
+        "芒硝 二兩"
+      ],
+      "source_clause": [
+        {
+          "clause_number": "106",
+          "text": "太陽病不解，熱結膀胱，其人如狂，血自下，下者愈。其外不解者，尚未可攻，當先解外；外解已，但少腹急結者，乃可攻之，宜桃核承氣湯。"
+        }
+      ]
+    },
+    {
+      "formula_name": "大黃䗪蟲丸",
+      "category": "金匱要略-虛勞乾血",
+      "must_have": {
+        "skin_scaling_dryness": 0.50,
+        "dark_circles_under_eyes": 0.50
+      },
+      "should_have": {
+        "lack_of_appetite": 0.20,
+        "pulse_sunken_fine": 0.20
+      },
+      "forbidden": [
+        "stabbing_lower_abdomen",
+        "diarrhea_clear_food"
+      ],
+      "ingredients": [
+        "大黃 拾兩",
+        "黃芩 貳兩",
+        "甘草 參兩",
+        "桃仁 壹升",
+        "杏仁 壹升",
+        "芍藥 肆兩",
+        "乾地黃 拾兩",
+        "乾漆 壹兩",
+        "虻蟲 壹升",
+        "水蛭 百枚",
+        "蠐螬 壹升",
+        "䗪蟲 半升"
+      ],
+      "source_clause": [
+        {
+          "clause_number": "金匱要略-虛勞",
+          "text": "五勞虛極，羸瘦腹滿，不能飲食，食傷、憂傷、飲傷、房室傷、飢傷、勞傷、經絡營衛氣傷，內有乾血，肌膚甲錯，眼眶黯黑，大黃䗪蟲丸主之。"
+        }
+      ]
+    },
+    {
+      "formula_name": "當歸芍藥散",
+      "category": "金匱要略-婦人妊娠",
+      "must_have": {
+        "menstrual_irregularity": 0.50,
+        "abdominal_fullness_pain": 0.50
+      },
+      "should_have": {
+        "edema_legs": 0.25,
+        "pulse_sunken_fine": 0.25
+      },
+      "forbidden": [
+        "constipation",
+        "pulse_flooding_large"
+      ],
+      "ingredients": [
+        "當歸 三兩",
+        "芍藥 一斤",
+        "茯苓 四兩",
+        "白朮 四兩",
+        "澤瀉 半斤",
+        "川芎 半斤"
+      ],
+      "source_clause": [
+        {
+          "clause_number": "金匱要略-婦人妊娠",
+          "text": "婦人懷妊，腹中㽱痛，當歸芍藥散主之。"
+        },
+        {
+          "clause_number": "金匱要略-婦人雜病",
+          "text": "婦人腹中諸疾痛，當歸芍藥散主之。"
+        }
+      ]
+    },
+    {
+      "formula_name": "溫經湯",
+      "category": "金匱要略-婦人雜病",
+      "must_have": {
+        "menstrual_blood_dark_clots": 0.50,
+        "throat_dryness": 0.50
+      },
+      "should_have": {
+        "cold_limbs": 0.25,
+        "fever_with_yin_deficiency": 0.25
+      },
+      "forbidden": [
+        "severe_diarrhea_clear_food",
+        "constipation"
+      ],
+      "ingredients": [
+        "吳茱萸 三兩",
+        "當歸 二兩",
+        "芎藭 二兩",
+        "芍藥 二兩",
+        "人參 二兩",
+        "桂枝 二兩",
+        "阿膠 二兩",
+        "牡丹皮 二兩",
+        "生薑 二兩",
+        "甘草 二兩",
+        "半夏 半升",
+        "麥門冬 一升"
+      ],
+      "source_clause": [
+        {
+          "clause_number": "金匱要略-婦人雜病",
+          "text": "問曰：婦人年五十所，病下利數十日不佳，暮即發熱，少腹裡急，腹滿，手掌煩熱，唇口乾燥，何也？師曰：此病屬帶下。何以故？曾經半產，瘀血在少腹不對。針導不至，藥石不能，故令下利。其證至此，宜溫經湯主之。"
+        }
+      ]
+    },
+    {
+      "formula_name": "半夏厚朴湯",
+      "category": "金匱要略-婦人雜病",
+      "must_have": {
+        "throat_obstruction_globus": 0.50,
+        "vomiting_nausea": 0.50
+      },
+      "should_have": {
+        "dyspnea": 0.25,
+        "cough_watery_sputum": 0.25
+      },
+      "forbidden": [
+        "throat_dryness",
+        "red_tongue_scanty_coating"
+      ],
+      "ingredients": [
+        "半夏 一升",
+        "厚朴 三兩",
+        "茯苓 四兩",
+        "生薑 五兩",
+        "蘇葉 二兩"
+      ],
+      "source_clause": [
+        {
+          "clause_number": "金匱要略-婦人雜病-梅核氣",
+          "text": "婦人咽中如有炙臠，半夏厚朴湯主之。"
+        }
+      ]
+    },
+    {
+      "formula_name": "苓桂術甘湯",
+      "category": "傷寒論-太陽病-痰飲",
+      "must_have": {
+        "throbbing_below_heart": 0.50,
+        "headache": 0.50
+      },
+      "should_have": {
+        "splash_sound_epigastric": 0.25,
+        "urination_difficulty": 0.25
+      },
+      "forbidden": [
+        "throat_dryness",
+        "extreme_thirst"
+      ],
+      "ingredients": [
+        "茯苓 四兩",
+        "桂枝 三兩",
+        "白朮 二兩",
+        "甘草 二兩 (炙)"
+      ],
+      "source_clause": [
+        {
+          "clause_number": "67",
+          "text": "傷寒若吐若下後，心下逆滿，氣上衝胸，起則頭眩，脈沉緊，發汗則動經，身為振振搖者，茯苓桂枝白朮甘草湯主之。"
+        }
+      ]
+    },
+    {
+      "formula_name": "茵陳蒿湯",
+      "category": "傷寒論-陽明病-黃疸",
+      "must_have": {
+        "yellow_skin_eyes_jaundice": 0.50,
+        "urine_yellow": 0.50
+      },
+      "should_have": {
+        "constipation": 0.25,
+        "yellow_dry_tongue_coating": 0.25
+      },
+      "forbidden": [
+        "diarrhea_clear_food",
+        "cold_limbs"
+      ],
+      "ingredients": [
+        "茵陳蒿 六兩",
+        "梔子 十四枚",
+        "大黃 二兩"
+      ],
+      "source_clause": [
+        {
+          "clause_number": "236",
+          "text": "陽明病，發熱，汗出者，此為熱越，不能發黃也。但頭汗出，身無汗，劑頸而還，小便不利，渴飲水漿者，此被瘀熱在裡，身必發黃，茵陳蒿湯主之。"
+        }
+      ]
+    },
+    {
+      "formula_name": "消風散",
+      "category": "外科正宗-皮膚專科",
+      "must_have": {
+        "severe_itching": 0.40,
+        "wind_wheals": 0.35,
+        "urticaria": 0.25
+      },
+      "should_have": {
+        "skin_redness_swelling": 0.15,
+        "eczema": 0.15,
+        "fever": 0.10
+      },
+      "forbidden": [
+        "cold_limbs",
+        "pulse_fine_weak",
+        "diarrhea_clear_food"
+      ],
+      "ingredients": [
+        "當歸", "生地", "防風", "蟬蛻", "知母", "苦參", "胡麻", "荊芥", "蒼朮", "牛蒡子", "石膏", "甘草", "木通"
+      ],
+      "source_clause": [
+        {
+          "clause_number": "外科正宗",
+          "text": "治風濕浸淫血脈，致生瘡疥，搔癢不絕，及大人小兒風熱癮疹，遍身雲片斑點，乍有乍無並效。"
+        }
+      ]
+    },
+    {
+      "formula_name": "當歸飲子",
+      "category": "濟生方-皮膚專科",
+      "must_have": {
+        "skin_scaling_dryness": 0.35,
+        "severe_itching": 0.35,
+        "psoriasis": 0.30
+      },
+      "should_have": {
+        "pulse_fine_weak": 0.20,
+        "eczema": 0.10
+      },
+      "forbidden": [
+        "skin_exudation",
+        "high_fever",
+        "pulse_flooding_large"
+      ],
+      "ingredients": [
+        "當歸", "白芍", "川芎", "生地", "白蒺藜", "防風", "荊芥", "何首烏", "黃耆", "甘草"
+      ],
+      "source_clause": [
+        {
+          "clause_number": "濟生方",
+          "text": "治心血凝滯，內蘊風熱，發見皮膚，遍身瘡疥，或腫或癢，或流水有窠，不問久近，及兩腿生瘡。"
+        }
+      ]
+    },
+    {
+      "formula_name": "龍膽瀉肝湯",
+      "category": "醫宗金鑑-皮膚專科",
+      "must_have": {
+        "skin_exudation": 0.35,
+        "skin_redness_swelling": 0.30,
+        "eczema": 0.35
+      },
+      "should_have": {
+        "bitter_mouth_dry_throat": 0.15,
+        "urine_yellow": 0.15,
+        "severe_itching": 0.10
+      },
+      "forbidden": [
+        "cold_limbs",
+        "pulse_fine_weak",
+        "diarrhea_clear_food"
+      ],
+      "ingredients": [
+        "龍膽草", "黃芩", "梔子", "澤瀉", "木通", "車前子", "當歸", "生地黃", "柴胡", "生甘草"
+      ],
+      "source_clause": [
+        {
+          "clause_number": "醫宗金鑑",
+          "text": "治肝膽經實火濕熱，脇痛耳聾，膽溢口苦，或陰挺陰腫，汗臭，溲赤，及濕熱流注之下部瘡瘍。"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,34 @@
+⚡ Launching Standalone Unified Finance Terminal via venv...
+2026-05-11 14:35:58,997 - INFO - Starting Standalone Unified Finance Terminal on http://127.0.0.1:9200
+INFO:     Started server process [2606]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:9200 (Press CTRL+C to quit)
+INFO:     127.0.0.1:50310 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50310 - "GET /app.js HTTP/1.1" 200 OK
+2026-05-11 14:37:01,573 | 2606 | 8457580800 | [open_context_base.py:410] _init_connect_sync: New connect ready: conn=7459491740428950980(1) context=<moomoo.quote.open_quote_context.OpenQuoteContext object at 0x10aef5c90>
+2026-05-11 14:37:01,821 | 2606 | 6221770752 | [open_context_base.py:518] on_disconnect: Disconnected: conn=0(1) reason=CallClose
+INFO:     127.0.0.1:50310 - "GET /api/chart?ticker=AMAT&period=1y&interval=1d&indicators=ma,bb,vol,macd,rsi HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50311 - "GET /api/connection-status HTTP/1.1" 200 OK
+2026-05-11 14:37:01,854 | 2606 | 8457580800 | [open_context_base.py:410] _init_connect_sync: New connect ready: conn=7459491741605296800(2) context=<moomoo.trade.open_trade_context.OpenSecTradeContext object at 0x10c7b5510>
+2026-05-11 14:37:01,860 | 2606 | 6221770752 | [open_context_base.py:518] on_disconnect: Disconnected: conn=0(2) reason=CallClose
+INFO:     127.0.0.1:50312 - "GET /api/positions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50311 - "GET /api/finance-analysis/reports?ticker=AMAT HTTP/1.1" 200 OK
+2026-05-11 14:37:01,865 | 2606 | 8457580800 | [open_context_base.py:410] _init_connect_sync: New connect ready: conn=7459491741650955069(3) context=<moomoo.trade.open_trade_context.OpenSecTradeContext object at 0x10c7b5d50>
+INFO:     127.0.0.1:50313 - "GET /api/account HTTP/1.1" 200 OK
+2026-05-11 14:37:01,873 | 2606 | 6221770752 | [open_context_base.py:518] on_disconnect: Disconnected: conn=0(3) reason=CallClose
+2026-05-11 14:37:01,875 | 2606 | 8457580800 | [open_context_base.py:410] _init_connect_sync: New connect ready: conn=7459491741692567107(4) context=<moomoo.trade.open_trade_context.OpenSecTradeContext object at 0x10c7b6510>
+INFO:     127.0.0.1:50314 - "GET /api/orders HTTP/1.1" 200 OK
+2026-05-11 14:37:01,882 | 2606 | 6221770752 | [open_context_base.py:518] on_disconnect: Disconnected: conn=0(4) reason=CallClose
+INFO:     127.0.0.1:50315 - "GET /api/watchlist HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50310 - "GET /api/chart?ticker=AMAT&period=5y&interval=1d&indicators=ma,bb,vol,macd,rsi HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50330 - "GET /api/chart?ticker=AMAT&period=5y&interval=1wk&indicators=ma,bb,vol,macd,rsi HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50333 - "GET /api/chart?ticker=AMAT&period=10y&interval=1wk&indicators=ma,bb,vol,macd,rsi HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50340 - "GET /api/finance-analysis/reports?ticker=TSLA HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50340 - "GET /api/chart?ticker=TSLA&period=10y&interval=1wk&indicators=ma,bb,vol,macd,rsi HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50341 - "GET /api/finance-analysis/report-content?filename=TSLA_finance_analysis_report_20260511_142639.md HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50344 - "GET /api/chart?ticker=TSLA&period=10y&interval=1d&indicators=ma,bb,vol,macd,rsi HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50348 - "GET /api/chart?ticker=TSLA&period=10y&interval=1d&indicators=ma,bb,vol,rsi HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50348 - "GET /api/chart?ticker=TSLA&period=10y&interval=1d&indicators=ma,bb,vol HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50348 - "GET /api/chart?ticker=TSLA&period=10y&interval=1d&indicators=ma,vol HTTP/1.1" 200 OK
+scripts/start_finance_dashboard.sh: line 12:  2606 Killed: 9               venv/bin/python plugins/finance_dashboard_standalone/server.py

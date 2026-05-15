@@ -1,0 +1,5 @@
+name: ai_hedge_fund
+version: 1.0.0
+description: AI Hedge Fund multi-agent decision support plugin
+author: Kenneth
+enabled: true

@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>傷寒雜病論 - 數位辨證終端</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@400;700&family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css?v=3.2">
+</head>
+<body>
+    <div class="app-container">
+        <header class="app-header">
+            <h1><span class="logo-icon">🌿</span> 傷寒雜病論 <span>數位辨證終端</span></h1>
+            <p class="subtitle">Quantitative TCM Diagnostic Engine based on Shanghan Lun</p>
+        </header>
+        
+        <main class="main-content">
+            <!-- Left Column: Input -->
+            <section class="panel input-panel">
+                <div class="panel-title-container">
+                    <h2>症狀採集 <span class="badge" id="selected-count">0</span></h2>
+                    <button class="clear-all-btn" id="btn-clear-all" disabled>清除重置</button>
+                </div>
+                
+                <div class="category-tabs" id="category-tabs">
+                    <!-- Dynamic category tabs will be injected here -->
+                </div>
+
+                <!-- AI Free-text Extraction Container -->
+                <div class="ai-free-text-section">
+                    <div class="section-title">💬 老中醫 AI 智能問診</div>
+                    <textarea id="ai-free-text" placeholder="輸入患者自由主訴... (例如: 昨晚淋雨後開始發燒、怕冷、沒流汗，脖子很僵硬，胃口還行，感覺呼吸有點氣喘)"></textarea>
+                    <button id="btn-ai-extract" class="btn-secondary">
+                        <span class="extract-btn-text">老中醫 AI 提取</span>
+                        <span class="extract-btn-loader"></span>
+                    </button>
+                    <div id="ai-extract-notes" class="ai-extract-notes" style="display: none;"></div>
+                </div>
+
+                <div class="search-box">
+                    <input type="text" id="symptom-search" placeholder="搜尋症狀... (例如: 發熱, 汗出)">
+                </div>
+                
+                <div class="symptoms-container" id="symptoms-container">
+                    <!-- Dynamic pills will be injected here -->
+                    <div class="loading">載入症狀資料庫中...</div>
+                </div>
+                
+                <button id="btn-analyze" class="btn-primary" disabled>
+                    <span class="btn-text">執行 AI 辨證</span>
+                    <span class="btn-loader"></span>
+                </button>
+
+                <!-- Book Upload Zone -->
+                <div id="book-upload-zone" class="upload-dropzone">
+                    <input type="file" id="book-file-input" accept=".txt,.md,.epub" style="display: none;">
+                    <div class="dropzone-content">
+                        <span class="dropzone-icon">📚</span>
+                        <p>拖曳醫案 / 醫書檔案至此</p>
+                        <span class="dropzone-hint">或點擊選擇檔案 (.txt, .md, .epub)</span>
+                    </div>
+                    <div id="upload-loader" class="upload-loader" style="display: none;">
+                        <span class="loader-spinner"></span>
+                        <span>解析學習中...</span>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- Right Column: Output -->
+            <section class="panel output-panel">
+                <div class="results-header">
+                    <h2>辨證決策矩陣</h2>
+                    <div class="status-indicator" id="engine-status">等待輸入</div>
+                </div>
+                
+                <div class="results-content">
+                    <div id="formula-results" class="formula-results">
+                        <div class="empty-state">
+                            請在左側選擇患者目前的症狀，並點擊「執行 AI 辨證」。
+                        </div>
+                    </div>
+                    
+                    <div class="ai-doctor-panel">
+                        <h3>AI 老中醫深度解析</h3>
+                        <div id="ai-analysis-content" class="markdown-body">
+                            <!-- LLM Typewriter effect goes here -->
+                            <div class="empty-state">等待辨證結果...</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="app.js?v=3.2"></script>
+</body>
+</html>
